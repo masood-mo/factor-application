@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --barzok-terracotta: #8B3A22;
+    --barzok-clay: #9E472A;
+    --barzok-sand: #FBF8F4;
+    --barzok-straw: #F4EDE3;
+    --barzok-border: #DFCFBA;
+    --barzok-dark: #241C18;
+    --barzok-timber: #382C26;
+    --barzok-turquoise: #1D6F70;
+    --barzok-rose: #9C2A3B;
+    --barzok-saffron: #C98218;
+  }
+
+  body {
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: #F8F5F0;
+    color: #241C18;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer utilities {
+  .card-polished {
+    background-color: #ffffff;
+    border: 1px solid rgba(223, 207, 186, 0.8);
+    box-shadow: 0 1px 3px 0 rgba(36, 28, 24, 0.04), 0 1px 2px -1px rgba(36, 28, 24, 0.02);
+    border-radius: 1rem;
+  }
+  
+  .input-polished {
+    background-color: #ffffff;
+    border: 1px solid #DFCFBA;
+    border-radius: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    color: #241C18;
+    transition: all 0.15s ease-in-out;
+  }
+  
+  .input-polished:focus {
+    outline: none;
+    border-color: #8B3A22;
+    box-shadow: 0 0 0 3px rgba(139, 58, 34, 0.12);
+  }
+
+  .btn-barzok-primary {
+    background-color: #8B3A22;
+    color: #ffffff;
+    transition: all 0.15s ease-in-out;
+  }
+  .btn-barzok-primary:hover {
+    background-color: #722E1A;
+  }
+
+  .btn-barzok-dark {
+    background-color: #241C18;
+    color: #ffffff;
+    transition: all 0.15s ease-in-out;
+  }
+  .btn-barzok-dark:hover {
+    background-color: #16110E;
+  }
+
+  .btn-barzok-turquoise {
+    background-color: #1D6F70;
+    color: #ffffff;
+    transition: all 0.15s ease-in-out;
+  }
+  .btn-barzok-turquoise:hover {
+    background-color: #165657;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-shadow-none {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}
+
+/* Custom polished scrollbar with Barzok earth tones */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F4EDE3;
+}
+::-webkit-scrollbar-thumb {
+  background: #DFCFBA;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C8AF93;
+}

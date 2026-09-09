@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "settings": {
+      "title": "Settings",
+      "description": "Eco-lodge general settings and config",
+      "properties": {
+        "lodgeName": { "type": "string" },
+        "lodgeLogo": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "taxRate": { "type": "number" },
+        "accountNumber": { "type": "string" },
+        "cardNumber": { "type": "string" },
+        "shaba": { "type": "string" },
+        "accountOwner": { "type": "string" },
+        "units": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "categories": {
+      "title": "Category",
+      "description": "Item/Service Category",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "items": {
+      "title": "Item/Service",
+      "description": "Products and services offered or purchased",
+      "properties": {
+        "name": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "unit": { "type": "string" },
+        "basePrice": { "type": "number" }
+      }
+    },
+    "sales_invoices": {
+      "title": "Sales Invoice",
+      "description": "Guest sales invoice",
+      "properties": {
+        "serialNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "guestName": { "type": "string" },
+        "guestPhone": { "type": "string" },
+        "notes": { "type": "string" },
+        "paid": { "type": "boolean" },
+        "totalPayable": { "type": "number" }
+      }
+    },
+    "purchase_invoices": {
+      "title": "Purchase Invoice",
+      "description": "Vendor purchase invoice",
+      "properties": {
+        "serialNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "notes": { "type": "string" },
+        "paid": { "type": "boolean" },
+        "totalPaid": { "type": "number" }
+      }
+    }
+  }
+}

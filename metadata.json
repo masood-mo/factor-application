@@ -1,0 +1,10 @@
+{
+  "name": "حسابداری اقامتگاه بوم‌گردی خانه برزک",
+  "description": "سیستم جامع حسابداری، صدور فاکتور و پیش‌فاکتور، مدیریت کالاها، مهمانان، چک‌ها، دستمزدها، بودجه‌بندی و سود سرمایه‌گذار اقامتگاه بوم‌گردی",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
