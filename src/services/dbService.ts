@@ -143,6 +143,34 @@ function setLocalCache<T>(key: string, val: T): void {
   }
 }
 
+// --- Cloudflare D1 Sync Bridge ---
+async function syncToD1(table: string, item: any, action: 'upsert' | 'delete' = 'upsert') {
+  try {
+    await fetch('/api/d1-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ table, item, action }),
+    });
+  } catch {
+    // Ignore if offline or not running in Cloudflare Pages
+  }
+}
+
+async function fetchFromD1<T>(table: string): Promise<T[] | null> {
+  try {
+    const res = await fetch(`/api/d1-sync?table=${table}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        return json.data as T[];
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
 // --- Settings Operations ---
 export async function fetchSettings(): Promise<LodgeSettings> {
   const cached = getLocalCache<LodgeSettings>('settings', DEFAULT_SETTINGS);
@@ -152,13 +180,26 @@ export async function fetchSettings(): Promise<LodgeSettings> {
     if (snap && snap.exists()) {
       const remote = { ...DEFAULT_SETTINGS, ...snap.data() } as LodgeSettings;
       setLocalCache('settings', remote);
+      syncToD1('lodge_settings', { id: 'default', ...remote });
       return remote;
     } else if (snap) {
       safeFirestoreOp(() => setDoc(docRef, sanitizeForFirestore(cached)));
       return cached;
     }
+    const d1Data = await fetchFromD1<LodgeSettings>('lodge_settings');
+    if (d1Data && d1Data.length > 0) {
+      const remote = { ...DEFAULT_SETTINGS, ...d1Data[0] };
+      setLocalCache('settings', remote);
+      return remote;
+    }
     return cached;
   } catch {
+    const d1Data = await fetchFromD1<LodgeSettings>('lodge_settings');
+    if (d1Data && d1Data.length > 0) {
+      const remote = { ...DEFAULT_SETTINGS, ...d1Data[0] };
+      setLocalCache('settings', remote);
+      return remote;
+    }
     return cached;
   }
 }
@@ -169,6 +210,7 @@ export async function saveSettings(settings: LodgeSettings): Promise<void> {
     const docRef = doc(db, 'settings', SETTINGS_DOC);
     await setDoc(docRef, sanitizeForFirestore(settings), { merge: true });
   });
+  syncToD1('lodge_settings', { id: 'default', ...settings });
 }
 
 // --- Category Operations ---
@@ -261,12 +303,14 @@ export async function saveItem(item: Partial<Item>): Promise<Item> {
   } catch {
     // Offline mode
   }
+  syncToD1('items', itemObj);
   return itemObj;
 }
 
 export async function deleteItem(id: string): Promise<void> {
   const list = getLocalCache<Item[]>('items', DEFAULT_ITEMS).filter(i => i.id !== id);
   setLocalCache('items', list);
+  syncToD1('items', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'items', id));
   } catch {
@@ -317,12 +361,14 @@ export async function saveGuest(guest: Partial<Guest>): Promise<Guest> {
   } catch {
     // Offline mode
   }
+  syncToD1('guests', guestObj);
   return guestObj;
 }
 
 export async function deleteGuest(id: string): Promise<void> {
   const list = getLocalCache<Guest[]>('guests', DEFAULT_GUESTS).filter(g => g.id !== id);
   setLocalCache('guests', list);
+  syncToD1('guests', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'guests', id));
   } catch {
@@ -450,12 +496,14 @@ export async function saveCheque(cheque: Partial<Cheque>): Promise<Cheque> {
   } catch {
     // Offline mode
   }
+  syncToD1('cheques', chequeObj);
   return chequeObj;
 }
 
 export async function deleteCheque(id: string): Promise<void> {
   const list = getLocalCache<Cheque[]>('cheques', []).filter(c => c.id !== id);
   setLocalCache('cheques', list);
+  syncToD1('cheques', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'cheques', id));
   } catch {
@@ -530,12 +578,14 @@ export async function saveWagePayment(wage: Partial<WagePayment>): Promise<WageP
   } catch {
     // Offline mode
   }
+  syncToD1('wages', wageObj);
   return wageObj;
 }
 
 export async function deleteWagePayment(id: string): Promise<void> {
   const list = getLocalCache<WagePayment[]>('wage_payments', []).filter(w => w.id !== id);
   setLocalCache('wage_payments', list);
+  syncToD1('wages', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'wage_payments', id));
   } catch {
@@ -573,8 +623,18 @@ export async function fetchSalesInvoices(): Promise<SalesInvoice[]> {
       setLocalCache('sales_invoices', list);
       return list;
     }
+    const d1Data = await fetchFromD1<SalesInvoice>('sales_invoices');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('sales_invoices', d1Data);
+      return d1Data;
+    }
     return cached;
   } catch {
+    const d1Data = await fetchFromD1<SalesInvoice>('sales_invoices');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('sales_invoices', d1Data);
+      return d1Data;
+    }
     return cached;
   }
 }
@@ -657,12 +717,16 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
     await setDoc(doc(db, 'sales_invoices', id), sanitizeForFirestore(invoiceObj), { merge: true });
   });
 
+  // 4. Cloudflare D1 Sync
+  syncToD1('sales_invoices', invoiceObj);
+
   return invoiceObj;
 }
 
 export async function deleteSalesInvoice(id: string): Promise<void> {
   const list = getLocalCache<SalesInvoice[]>('sales_invoices', []).filter(i => i.id !== id);
   setLocalCache('sales_invoices', list);
+  syncToD1('sales_invoices', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'sales_invoices', id));
   } catch {
@@ -744,8 +808,18 @@ export async function fetchPurchaseInvoices(): Promise<PurchaseInvoice[]> {
       setLocalCache('purchase_invoices', list);
       return list;
     }
+    const d1Data = await fetchFromD1<PurchaseInvoice>('purchase_invoices');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('purchase_invoices', d1Data);
+      return d1Data;
+    }
     return cached;
   } catch {
+    const d1Data = await fetchFromD1<PurchaseInvoice>('purchase_invoices');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('purchase_invoices', d1Data);
+      return d1Data;
+    }
     return cached;
   }
 }
@@ -790,12 +864,14 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
   } catch {
     // Offline mode
   }
+  syncToD1('purchase_invoices', invoiceObj);
   return invoiceObj;
 }
 
 export async function deletePurchaseInvoice(id: string): Promise<void> {
   const list = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []).filter(i => i.id !== id);
   setLocalCache('purchase_invoices', list);
+  syncToD1('purchase_invoices', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'purchase_invoices', id));
   } catch {
