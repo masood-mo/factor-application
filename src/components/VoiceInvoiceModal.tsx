@@ -48,6 +48,11 @@ export function VoiceInvoiceModal({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [speechApiAvailable, setSpeechApiAvailable] = useState<boolean>(true);
 
   // Speech recognition refs
   const recognitionRef = useRef<any>(null);
@@ -55,78 +60,81 @@ export function VoiceInvoiceModal({
   const baseTextRef = useRef<string>('');
   const timerRef = useRef<any>(null);
 
-  // Initialize Web Speech API for live transcription preview
-  useEffect(() => {
+  // Initialize SpeechRecognition dynamically
+  const setupSpeechRecognition = () => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'fa-IR';
-
-        recognition.onresult = (event: any) => {
-          let currentSessionFinal = '';
-          let currentSessionInterim = '';
-
-          // Reconstruct cleanly from event.results to prevent duplicate words
-          for (let i = 0; i < event.results.length; i++) {
-            const res = event.results[i];
-            if (res[0] && res[0].transcript) {
-              if (res.isFinal) {
-                currentSessionFinal += res[0].transcript.trim() + ' ';
-              } else {
-                currentSessionInterim += res[0].transcript.trim() + ' ';
-              }
-            }
-          }
-
-          const combined = (
-            baseTextRef.current +
-            ' ' +
-            currentSessionFinal +
-            ' ' +
-            currentSessionInterim
-          )
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          if (combined) {
-            setTranscript(combined);
-          }
-        };
-
-        recognition.onerror = (event: any) => {
-          if (event.error === 'no-speech') {
-            return;
-          }
-          if (event.error === 'not-allowed') {
-            setErrorMessage('دسترسی به میکروفون غیرفعال است. لطفاً در مرورگر اجازه دسترسی دهید.');
-          } else {
-            console.warn('Speech recognition status:', event.error);
-          }
-        };
-
-        recognition.onend = () => {
-          // If still marked as recording, update base text with what was captured
-          if (isRecordingRef.current) {
-            baseTextRef.current = transcript.trim();
-            // Re-start gracefully only if still recording
-            try {
-              recognition.start();
-            } catch (e) {
-              // already running or stopped
-            }
-          }
-        };
-
-        recognitionRef.current = recognition;
-      } catch (err) {
-        console.warn('SpeechRecognition init error:', err);
-      }
+    if (!SpeechRecognition) {
+      setSpeechApiAvailable(false);
+      return null;
     }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'fa-IR';
+
+      recognition.onresult = (event: any) => {
+        let currentSessionFinal = '';
+        let currentSessionInterim = '';
+
+        for (let i = 0; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res[0] && res[0].transcript) {
+            if (res.isFinal) {
+              currentSessionFinal += res[0].transcript.trim() + ' ';
+            } else {
+              currentSessionInterim += res[0].transcript.trim() + ' ';
+            }
+          }
+        }
+
+        const combined = (
+          baseTextRef.current +
+          ' ' +
+          currentSessionFinal +
+          ' ' +
+          currentSessionInterim
+        )
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (combined) {
+          setTranscript(combined);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        if (event.error === 'no-speech') return;
+        if (event.error === 'not-allowed') {
+          setErrorMessage('دسترسی به میکروفون غیرفعال است. لطفاً در مرورگر اجازه دسترسی به میکروفون دهید.');
+        } else {
+          console.warn('Speech recognition notice:', event.error);
+        }
+      };
+
+      recognition.onend = () => {
+        if (isRecordingRef.current) {
+          baseTextRef.current = transcript.trim();
+          try {
+            recognition.start();
+          } catch (e) {
+            // safely handle restart
+          }
+        }
+      };
+
+      return recognition;
+    } catch (err) {
+      console.warn('SpeechRecognition init error:', err);
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    recognitionRef.current = setupSpeechRecognition();
 
     return () => {
       stopRecording();
@@ -157,12 +165,45 @@ export function VoiceInvoiceModal({
     isRecordingRef.current = true;
     setIsRecording(true);
 
-    // 1. Start MediaRecorder for lossless continuous audio capture
+    // 1. Start MediaRecorder and AudioContext for live volume feedback
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaStreamRef.current = stream;
         audioChunksRef.current = [];
+
+        // AudioContext for live volume meter
+        try {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            const audioCtx = new AudioCtx();
+            const source = audioCtx.createMediaStreamSource(stream);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            audioContextRef.current = audioCtx;
+            analyserRef.current = analyser;
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const updateVolume = () => {
+              if (!isRecordingRef.current) return;
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < bufferLength; i++) {
+                sum += dataArray[i];
+              }
+              const average = sum / bufferLength;
+              setAudioLevel(Math.min(100, Math.round((average / 128) * 100)));
+              animFrameRef.current = requestAnimationFrame(updateVolume);
+            };
+            updateVolume();
+          }
+        } catch (audioCtxErr) {
+          console.warn('AudioContext meter notice:', audioCtxErr);
+        }
 
         let mimeType = 'audio/webm';
         if (!MediaRecorder.isTypeSupported('audio/webm')) {
@@ -184,21 +225,40 @@ export function VoiceInvoiceModal({
       }
     } catch (err: any) {
       console.warn('MediaRecorder permission or error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorMessage('اجازه استفاده از میکروفون داده نشد. لطفاً در مرورگر دسترسی میکروفون را فعال کنید.');
+      }
     }
 
-    // 2. Start SpeechRecognition for real-time text feedback on screen
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        // already started
+    // 2. Start or re-create SpeechRecognition for real-time text transcription
+    try {
+      if (!recognitionRef.current) {
+        recognitionRef.current = setupSpeechRecognition();
       }
+      if (recognitionRef.current) {
+        recognitionRef.current.start();
+      }
+    } catch (e: any) {
+      console.warn('SpeechRecognition start status:', e?.message || e);
     }
   };
 
   const stopRecording = () => {
     isRecordingRef.current = false;
     setIsRecording(false);
+    setAudioLevel(0);
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
 
     // Stop MediaRecorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -303,43 +363,63 @@ export function VoiceInvoiceModal({
       if (!segClean || segClean.length < 2) continue;
 
       let unitPrice = 0;
-      const priceMatch = segClean.match(/(\d+|[۰-۹]+)(?:\s*(هزار|میلیون))?\s*(?:تومان|تومن|ریال)?/);
+
+      // Match price at end or within segment: e.g. "۳۵۰ هزار تومن", "350000 تومان", "۴۰۰ تومن"
+      const pricePattern = /(?:به\s+مبلغ|قیمت|هر\s*(?:پرس|عدد|شب|دست|وعده))?\s*(\d+|[۰-۹]+)(?:\s*(هزار|میلیون))?\s*(?:تومان|تومن|ریال)?$/i;
+      const generalPricePattern = /(\d+|[۰-۹]+)\s*(هزار|میلیون)\s*(?:تومان|تومن|ریال)?|(\d{4,9})\s*(?:تومان|تومن|ریال)?/;
+      
+      const priceMatch = segClean.match(pricePattern) || segClean.match(generalPricePattern);
       if (priceMatch) {
-        const rawNum = parseInt(toEnglishDigits(priceMatch[1]), 10);
+        const rawNum = parseInt(toEnglishDigits(priceMatch[1] || priceMatch[3]), 10);
         const scale = priceMatch[2];
         if (scale === 'هزار') {
           unitPrice = rawNum * 1000;
-          segClean = segClean.replace(priceMatch[0], ' ').trim();
         } else if (scale === 'میلیون') {
           unitPrice = rawNum * 1000000;
-          segClean = segClean.replace(priceMatch[0], ' ').trim();
-        } else if (rawNum >= 1000) {
+        } else if (rawNum < 1000 && (segClean.includes('تومن') || segClean.includes('تومان'))) {
+          // In casual Persian speech "۳۵۰ تومن" means 350,000 Tomans
+          unitPrice = rawNum * 1000;
+        } else {
           unitPrice = rawNum;
-          segClean = segClean.replace(priceMatch[0], ' ').trim();
         }
+        segClean = segClean.replace(priceMatch[0], ' ').trim();
       }
 
       let quantity = 1;
       let unit = 'عدد';
-      const qtyUnitMatch = segClean.match(
+      
+      // Check Pattern 1: Number + Unit at start: "۳ پرس کالجوش", "۲ شب اقامت"
+      const prefixQtyMatch = segClean.match(
         /^(\d+|[۰-۹]+|یک|یه|دو|سه|چهار|پنج|شش|شیش|هفت|هشت|نه|ده)\s*(شب|پرس|عدد|دست|وعده|کیلو|بطری|قوری|بسته|نفر\/شب)?\s*(?:تا)?\s*(.*)$/
       );
+
+      // Check Pattern 2: Item Name + Number + Unit: "کالجوش ۳ پرس", "دیزی سنگی ۲ دست"
+      const suffixQtyMatch = segClean.match(
+        /^(.*?)\s+(\d+|[۰-۹]+|یک|یه|دو|سه|چهار|پنج|شش|شیش|هفت|هشت|نه|ده)\s*(شب|پرس|عدد|دست|وعده|کیلو|بطری|قوری|بسته|نفر\/شب)?\s*(?:تا)?$/
+      );
+
       let itemName = segClean;
 
-      if (qtyUnitMatch) {
-        const numStr = qtyUnitMatch[1];
+      if (suffixQtyMatch && suffixQtyMatch[1].trim()) {
+        itemName = suffixQtyMatch[1].trim();
+        const numStr = suffixQtyMatch[2];
         quantity = wordNums[numStr] || parseInt(toEnglishDigits(numStr), 10) || 1;
-        if (qtyUnitMatch[2]) {
-          unit = qtyUnitMatch[2];
+        if (suffixQtyMatch[3]) {
+          unit = suffixQtyMatch[3];
         }
-        if (qtyUnitMatch[3]) {
-          itemName = qtyUnitMatch[3].trim();
+      } else if (prefixQtyMatch && prefixQtyMatch[3].trim()) {
+        const numStr = prefixQtyMatch[1];
+        quantity = wordNums[numStr] || parseInt(toEnglishDigits(numStr), 10) || 1;
+        if (prefixQtyMatch[2]) {
+          unit = prefixQtyMatch[2];
         }
+        itemName = prefixQtyMatch[3].trim();
       }
 
       itemName = itemName
-        .replace(/^(?:از|در|برای)\s+/, '')
+        .replace(/^(?:از|در|برای|یک|یه)\s+/, '')
         .replace(/\s+(?:تومان|تومن|هزار|میلیون)$/, '')
+        .replace(/(?:به\s+مبلغ|قیمت)\s*$/, '')
         .trim();
 
       if (!itemName) continue;
@@ -567,20 +647,35 @@ export function VoiceInvoiceModal({
             {isRecording ? <MicOff className="w-8 h-8 text-white" /> : <Mic className="w-8 h-8 text-amber-200" />}
           </button>
           
-          <div className="text-center space-y-1">
+          <div className="text-center space-y-1.5 w-full max-w-xs">
             <p className="text-sm font-bold text-slate-800">
               {isRecording ? 'در حال ضبط صدا... لطفاً صحبت کنید' : 'برای شروع صحبت روی میکروفون بزنید'}
             </p>
             {isRecording ? (
-              <div className="flex items-center justify-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
-                <span className="text-xs font-mono font-bold text-rose-600">
-                  {recordingSeconds} ثانیه ضبط زنده
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex items-center justify-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                  <span className="text-xs font-mono font-bold text-rose-600">
+                    {recordingSeconds} ثانیه ضبط زنده
+                  </span>
+                </div>
+                {/* Live audio level wave bar */}
+                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-rose-500 h-full transition-all duration-75 rounded-full"
+                    style={{ width: `${Math.max(8, audioLevel)}%` }}
+                  />
+                </div>
+                <span className="text-[11px] text-slate-500">
+                  {audioLevel > 15 ? '🎤 صدای شما دریافت شد' : 'صدای خود را به میکروفون نزدیک کنید'}
                 </span>
-                <span className="text-[11px] text-slate-500">(قطع و وصل نمی‌شود)</span>
               </div>
             ) : (
-              <p className="text-[11px] text-slate-500">همچنین می‌توانید متن را مستقیماً در کادر زیر تایپ یا ویرایش کنید</p>
+              <p className="text-[11px] text-slate-500">
+                {speechApiAvailable
+                  ? 'هوش مصنوعی صدا را شنیده و متن و قیمت‌ها را خودکار استخراج می‌کند'
+                  : 'مرورگر شما از تبدیل صوت آنلاین پشتیبانی نمی‌کند؛ می‌توانید مستقیماً متن را تایپ کنید'}
+              </p>
             )}
           </div>
 

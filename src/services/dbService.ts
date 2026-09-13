@@ -218,12 +218,14 @@ export async function fetchCategories(): Promise<Category[]> {
   const cached = getLocalCache<Category[]>('categories', DEFAULT_CATEGORIES);
   try {
     const q = query(collection(db, 'categories'), orderBy('name', 'asc'));
-    const snap = await getDocs(q);
-    const list: Category[] = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Category));
-    if (list.length > 0) {
-      setLocalCache('categories', list);
-      return list;
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: Category[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Category));
+      if (list.length > 0) {
+        setLocalCache('categories', list);
+        return list;
+      }
     }
     return cached;
   } catch {
@@ -268,16 +270,18 @@ export async function fetchItems(): Promise<Item[]> {
   const cached = getLocalCache<Item[]>('items', DEFAULT_ITEMS);
   try {
     const q = query(collection(db, 'items'), orderBy('name', 'asc'));
-    const snap = await getDocs(q);
-    const list: Item[] = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Item));
-    if (list.length > 0) {
-      setLocalCache('items', list);
-      return list;
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: Item[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Item));
+      if (list.length > 0) {
+        setLocalCache('items', list);
+        return [...list];
+      }
     }
-    return cached;
+    return [...cached];
   } catch {
-    return cached;
+    return [...cached];
   }
 }
 

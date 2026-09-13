@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Category, Item, LodgeSettings } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
-import { FolderPlus, PackagePlus, Search, Edit3, Trash2, Folder, Tag, Plus, Check, X, Filter } from 'lucide-react';
+import { FolderPlus, PackagePlus, Search, Edit3, Trash2, Folder, Tag, Plus, Check, X, Filter, RefreshCw, Loader2 } from 'lucide-react';
 
 interface ItemsCatalogViewProps {
   categories: Category[];
@@ -11,6 +11,7 @@ interface ItemsCatalogViewProps {
   onDeleteCategory: (id: string) => Promise<void>;
   onSaveItem: (item: Partial<Item>) => Promise<Item>;
   onDeleteItem: (id: string) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 }
 
 export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
@@ -21,9 +22,11 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
   onDeleteCategory,
   onSaveItem,
   onDeleteItem,
+  onRefresh,
 }) => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Modals state
   const [categoryModalOpen, setCategoryModalOpen] = useState<boolean>(false);
@@ -58,8 +61,13 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
       return;
     }
     if (confirm(`آیا از حذف دسته "${name}" اطمینان دارید؟`)) {
-      await onDeleteCategory(id);
-      if (selectedCategoryId === id) setSelectedCategoryId('ALL');
+      try {
+        await onDeleteCategory(id);
+        if (selectedCategoryId === id) setSelectedCategoryId('ALL');
+      } catch (err) {
+        console.error(err);
+        alert('خطا در حذف دسته‌بندی');
+      }
     }
   };
 
@@ -69,13 +77,15 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
     const foundCat = categories.find((c) => c.id === initialCatId);
 
     setEditingItem(
-      item || {
-        categoryId: initialCatId,
-        categoryName: foundCat?.name || 'سایر',
-        name: '',
-        unit: settings.units[0] || 'عدد',
-        basePrice: 0,
-      }
+      item
+        ? { ...item }
+        : {
+            categoryId: initialCatId,
+            categoryName: foundCat?.name || 'سایر',
+            name: '',
+            unit: settings.units[0] || 'عدد',
+            basePrice: 0,
+          }
     );
     setItemModalOpen(true);
   };
@@ -104,7 +114,12 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
   const handleDeleteItemClick = async (id: string, name: string) => {
     if (confirm(`آیا از حذف کالا/خدمت "${name}" اطمینان دارید؟`)) {
-      await onDeleteItem(id);
+      try {
+        await onDeleteItem(id);
+      } catch (err) {
+        console.error(err);
+        alert('خطا در حذف کالا');
+      }
     }
   };
 
@@ -117,6 +132,18 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
       item.unit?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  const handleManualRefresh = async () => {
+    if (!onRefresh) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
@@ -133,6 +160,18 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onRefresh && (
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              title="به‌روزرسانی لیست کالاها"
+            >
+              <RefreshCw className={`w-4 h-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">به‌روزرسانی</span>
+            </button>
+          )}
+
           <button
             onClick={() => handleOpenCategoryModal()}
             className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"

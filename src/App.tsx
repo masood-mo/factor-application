@@ -136,29 +136,49 @@ export default function App() {
   // Handlers for Categories
   const handleSaveCategory = async (cat: Partial<Category>): Promise<Category> => {
     const saved = await saveCategory(cat);
+    setCategories((prev) => {
+      const idx = prev.findIndex((c) => c.id === saved.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      }
+      return [...prev, saved];
+    });
     const updated = await fetchCategories();
-    setCategories(updated);
+    setCategories([...updated]);
     return saved;
   };
 
   const handleDeleteCategory = async (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
     await deleteCategory(id);
     const updated = await fetchCategories();
-    setCategories(updated);
+    setCategories([...updated]);
   };
 
   // Handlers for Items
   const handleSaveItem = async (it: Partial<Item>): Promise<Item> => {
     const saved = await saveItem(it);
+    setItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === saved.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      }
+      return [...prev, saved];
+    });
     const updated = await fetchItems();
-    setItems(updated);
+    setItems([...updated]);
     return saved;
   };
 
   const handleDeleteItem = async (id: string) => {
+    setItems((prev) => prev.filter((i) => i.id !== id));
     await deleteItem(id);
     const updated = await fetchItems();
-    setItems(updated);
+    setItems([...updated]);
   };
 
   // Auto-Create Item from Sales Invoice (if user typed new item name)
@@ -323,6 +343,7 @@ export default function App() {
             settings={settings}
             existingItems={items}
             existingGuests={guests}
+            existingInvoices={salesInvoices}
             invoiceToEdit={editingSalesInvoice}
             onSaveInvoice={handleSaveSalesInvoice}
             onAutoCreateItem={handleAutoCreateItem}
@@ -469,6 +490,11 @@ export default function App() {
             onDeleteCategory={handleDeleteCategory}
             onSaveItem={handleSaveItem}
             onDeleteItem={handleDeleteItem}
+            onRefresh={async () => {
+              const [cats, its] = await Promise.all([fetchCategories(), fetchItems()]);
+              setCategories([...cats]);
+              setItems([...its]);
+            }}
           />
         )}
 

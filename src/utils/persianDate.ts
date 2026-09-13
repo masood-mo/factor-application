@@ -154,3 +154,47 @@ export function formatPersianDate(dateStr?: string | Date): string {
   }
   return toPersianDigits(str);
 }
+
+export function toEnglishDigits(str?: string | null): string {
+  if (!str) return '';
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  let res = str.toString();
+  for (let i = 0; i < 10; i++) {
+    res = res.replace(new RegExp(persianDigits[i], 'g'), i.toString());
+    res = res.replace(new RegExp(arabicDigits[i], 'g'), i.toString());
+  }
+  return res;
+}
+
+/**
+ * Generate invoice serial number in the requested format:
+ * F-year-0001 (e.g., F-۱۴۰۵-۰۰۰۱ or F-1405-0001 converted to Persian digits)
+ * Starts from 0001 for each Persian calendar year.
+ */
+export function generateNextInvoiceSerialNumber(existingSerialNumbers: string[], dateJalali?: string): string {
+  const jalali = dateJalali || getCurrentJalaliDate();
+  const yearEng = toEnglishDigits(jalali.split('/')[0] || '1403');
+  
+  let maxSeq = 0;
+  for (const rawSerial of existingSerialNumbers) {
+    if (!rawSerial) continue;
+    const clean = toEnglishDigits(rawSerial).trim();
+    // Match patterns like F-1405-0001 or F-1405-1 or similar
+    const match = clean.match(/^F-(\d{4})-(\d+)$/i);
+    if (match) {
+      const serialYear = match[1];
+      const serialNum = parseInt(match[2], 10);
+      if (serialYear === yearEng && !isNaN(serialNum)) {
+        if (serialNum > maxSeq) {
+          maxSeq = serialNum;
+        }
+      }
+    }
+  }
+
+  const nextSeq = maxSeq + 1;
+  const seqStr = String(nextSeq).padStart(4, '0');
+  // Format with Persian numerals: F-۱۴۰۵-۰۰۰۱
+  return `F-${toPersianDigits(yearEng)}-${toPersianDigits(seqStr)}`;
+}
