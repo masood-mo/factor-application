@@ -37,7 +37,7 @@ export const DEFAULT_BUDGET_ROWS: BudgetRowConfig[] = [
 
 export const DEFAULT_SETTINGS: LodgeSettings = {
   lodgeName: 'اقامتگاه بوم‌گردی خانه برزک',
-  lodgeLogo: '',
+  lodgeLogo: '/lodge-logo.svg',
   signatureImage: '',
   stampImage: '',
   economicCode: '411548796541',

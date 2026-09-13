@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SalesInvoice } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
-import { isDateInRange } from '../utils/persianDate';
+import { isDateInRange, formatPersianDate } from '../utils/persianDate';
 import {
   FileText,
   Search,
@@ -222,7 +222,7 @@ export const SalesInvoicesListView: React.FC<SalesInvoicesListViewProps> = ({
                       <td className="px-3 py-3 font-mono font-bold text-amber-900 text-center">
                         {inv.serialNumber}
                       </td>
-                      <td className="px-3 py-3 font-mono text-slate-600">{inv.date}</td>
+                      <td className="px-3 py-3 font-bold text-slate-700">{formatPersianDate(inv.date)}</td>
                       <td className="px-4 py-3 font-bold text-slate-900">
                         {inv.guestName}
                         {inv.guestPhone && (

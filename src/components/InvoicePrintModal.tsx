@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { SalesInvoice, LodgeSettings } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
+import { formatPersianDate } from '../utils/persianDate';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
@@ -273,17 +274,11 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             
             {/* Logo & Lodge Info */}
             <div className="flex items-center gap-4">
-              {settings.lodgeLogo ? (
-                <img
-                  src={settings.lodgeLogo}
-                  alt="Logo"
-                  className="w-16 h-16 rounded-2xl object-cover border border-amber-900/20 shadow-xs"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-2xl bg-amber-800 text-white flex items-center justify-center font-bold shadow-xs">
-                  <Building2 className="w-8 h-8 text-amber-200" />
-                </div>
-              )}
+              <img
+                src={settings.lodgeLogo || '/lodge-logo.svg'}
+                alt={settings.lodgeName || 'لوگوی اقامتگاه'}
+                className="w-16 h-16 rounded-2xl object-contain border border-amber-900/20 bg-white p-1 shadow-xs print:block"
+              />
 
               <div>
                 <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -320,7 +315,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               </div>
               <div className="flex justify-between items-center gap-3">
                 <span className="text-slate-500 font-bold">تاریخ صدور:</span>
-                <span className="font-mono font-bold text-slate-900">{invoice.date}</span>
+                <span className="font-bold text-slate-900">{formatPersianDate(invoice.date)}</span>
               </div>
               <div className="flex justify-between items-center gap-3 pt-1 border-t border-amber-900/10">
                 <span className="text-slate-500 font-bold">وضعیت تسویه:</span>
@@ -347,11 +342,28 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 <span className="font-mono font-bold text-slate-900">{invoice.guestPhone}</span>
               </div>
             )}
-            {invoice.notes && (
-              <div className="sm:col-span-2 pt-1 border-t border-slate-200 text-slate-700 leading-relaxed font-medium">
-                <span className="text-slate-500 font-bold">یادداشت و توضیحات:</span> {invoice.notes}
-              </div>
-            )}
+            {/* Filter out voice recording notes completely from invoice print */}
+            {(() => {
+              const cleanNotes = (invoice.notes || '')
+                .split('\n')
+                .map((l) => l.trim())
+                .filter(
+                  (l) =>
+                    l &&
+                    !l.includes('ثبت صوتی') &&
+                    !l.includes('صدای ضبط شده') &&
+                    !l.startsWith('Voice:')
+                )
+                .join(' ')
+                .trim();
+
+              if (!cleanNotes) return null;
+              return (
+                <div className="sm:col-span-2 pt-1 border-t border-slate-200 text-slate-700 leading-relaxed font-medium">
+                  <span className="text-slate-500 font-bold">یادداشت و توضیحات:</span> {cleanNotes}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Line Items Table */}
@@ -407,7 +419,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 {invoice.payments.map((pmt, pIdx) => (
                   <div key={pmt.id || pIdx} className="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100 font-medium">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-slate-700">{pmt.date}</span>
+                      <span className="font-bold text-slate-700">{formatPersianDate(pmt.date)}</span>
                       <span className="text-slate-500">
                         {pmt.method === 'POS' ? 'کارتخوان' : pmt.method === 'CASH' ? 'نقدی' : pmt.method === 'CHEQUE' ? 'چک صیادی' : 'کارت‌به‌کارت'}
                       </span>

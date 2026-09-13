@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { ZipArchive } from 'archiver';
 
 dotenv.config();
 
@@ -10,6 +10,41 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// Download Full Project Source Code as ZIP
+app.get('/api/download-zip', (req, res) => {
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="factor-application.zip"');
+
+  const archive = new ZipArchive({
+    zlib: { level: 9 },
+  });
+
+  archive.on('error', (err) => {
+    console.error('Archive error:', err);
+    if (!res.headersSent) {
+      res.status(500).send({ error: err.message });
+    }
+  });
+
+  archive.pipe(res);
+
+  archive.glob('**/*', {
+    cwd: process.cwd(),
+    dot: true,
+    ignore: [
+      'node_modules/**',
+      'dist/**',
+      '.git/**',
+      'bun.lock',
+      'bun.lockb',
+      '**/*.log',
+      'factor-application.zip',
+    ],
+  });
+
+  archive.finalize();
+});
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
@@ -19,71 +54,110 @@ app.get('/api/health', (req, res) => {
 // Gemini AI Voice Invoice Parser Endpoint
 app.post('/api/parse-invoice-voice', async (req, res) => {
   try {
-    const { transcript, catalog = [], customerTitle = 'مهمان' } = req.body;
-    if (!transcript || typeof transcript !== 'string' || !transcript.trim()) {
-      return res.status(400).json({ error: 'متن صوتی ارسالی خالی است' });
+    const { transcript, audioBase64, audioMimeType, catalog = [], customerTitle = 'مهمان' } = req.body;
+    if ((!transcript || typeof transcript !== 'string' || !transcript.trim()) && !audioBase64) {
+      return res.status(400).json({ error: 'متن صوتی یا فایل صوتی ارسالی خالی است' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
+      console.warn('GEMINI_API_KEY is not set in environment.');
       return res.json({ fallback: true, message: 'No Gemini API key provided' });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
-    const prompt = `شما یک دستیار هوشمند، بسیار دقیق و مسلط به زبان فارسی و اصطلاحات اقامتگاه‌های بوم‌گردی و رستوران‌ها و فروشگاه‌های ایران هستید.
-وظیفه شما استخراج اطلاعات صورتحساب / فاکتور از متن پیاده‌سازی شده صدای گوینده است.
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
 
-عنوان خریدار در سیستم: ${customerTitle}
-کاتالوگ کالاهای موجود اقامتگاه:
-${JSON.stringify(
-  catalog.map((c: any) => ({
-    id: c.id,
-    name: c.name,
-    unit: c.unit,
-    basePrice: c.basePrice,
-    categoryName: c.categoryName
-  })),
-  null,
-  2
-)}
+    const catalogSummary = catalog.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      unit: c.unit,
+      basePrice: c.basePrice,
+      categoryName: c.categoryName,
+    }));
 
-متن صوتی ورودی کاربر:
-"${transcript}"
+    const systemInstruction = `شما یک دستیار هوش مصنوعی فوق‌العاده باهوش، مسلط به زبان فارسی و با دقت حسابداری ۱۰۰٪ (Zero Hallucination) برای اقامتگاه بوم‌گردی و رستوران سنتی ایرانی هستید.
+وظیفه شما استخراج دقیق اقلام فاکتور از صحبت‌های گفتاری یا متن ورودی و تطبیق هوشمند با کاتالوگ یا شناسایی کالاهای جدید است.
 
-دستورالعمل‌ها:
-1. نام شخص یا شرکت یا مهمان/خریدار را استخراج کنید (مثلا "آقای مسعود ملایی"، "خانواده رضایی"، "مهمان اتاق شاه‌نشین").
-2. شماره تماس در صورت ذکر شدن (مثلا 0913... یا 0912...) را استخراج کنید.
-3. تمام اقلام، کالاها و خدمات ذکر شده را با دقت به ردیف‌های مجزا تبدیل کنید.
-   - نام کالا: در صورت تطابق با کاتالوگ، نام کاتالوگ؛ در غیر این صورت نام گفته شده در صوت (مثلا "دیزی سنگی"، "اقامت در سوئیت سنتی"، "چای و قلیان").
-   - تعداد (quantity): عدد صحیح بر اساس گفتار (مثلا دو = 2، سه = 3).
-   - واحد (unit): مثل "پرس"، "عدد"، "شب"، "دست"، "وعده"، "کیلو"، "بطری".
-   - قیمت واحد (unitPrice): به تومان. اگر کالا در کاتالوگ بود، قیمت کاتالوگ را قرار دهید. اگر گوینده قیمتی اعلام کرد، آن قیمت به تومان را قرار دهید.
-4. آیا فاکتور پیش‌فاکتور (رزرو/استعلام) است یا نهایی؟ status: "FINAL" یا "PROFORMA".
-5. آیا فاکتور خرید (هزینه) است یا فاکتور فروش؟ isPurchase: true / false.
+قوانین حیاتی:
+۱. عدم حدس و عدم تغییر نام کالاها (Zero Hallucination):
+- فقط و فقط مواردی که کاربر صریحاً ذکر کرده را استخراج کنید.
+- هرگز نباید کلمه‌ای که کاربر نگفته را اختراع، تعویض یا به کاتالوگ تحمیل کنید.
+- اگر کاربر گفت «۲ شب اقامت برای مسعود و یک چلوکباب ۸۰۰ هزار تومن و یک کالجوش ۴۰۰ تومن و صنایع دستی ۵۰۰ تومن»:
+  * اقامت باید دقیقاً «اقامت» با تعداد ۲ باشد (نه اینکه به نام سوئیت‌های خاص کاتالوگ تغییر کند).
+  * «چلوکباب» باید دقیقاً «چلوکباب» باشد (به کباب شامی یا اقلام دیگر تغییر نکند).
+  * «کالجوش» و «صنایع دستی» باید دقیقاً با همان نام استخراج شوند.
 
-خروجی باید صرفاً یک آبجکت معتبر JSON خالص بدون هیچ توضیح دیگری باشد:
+۲. تطبیق با کاتالوگ و کالای جدید:
+- اگر نام کالا با یکی از اقلام کاتالوگ همخوانی دقیق یا بسیار بالا دارد (مثلا «چای» برای «چای آتشی»)، isNewCatalogItem: false قرار دهید و catalogItemId را شناسه آن کالا بگذارید.
+- اگر کالا در کاتالوگ نیست یا تفاوت اساسی دارد (مانند چلوکباب، کالجوش، دیزی، صنایع دستی)، isNewCatalogItem: true و catalogItemId: null بگذارید و فیلد suggestedCategoryName را با یکی از دسته‌بندی‌های مناسب (مانند «رستوران و نوشیدنی‌های سنتی»، «دست‌آفرید و صنایع دستی برزک»، «اقامت و صبحانه محلی»، «سایر خدمات و پذیرایی اختصاصی») پر کنید.
+
+۳. مبالغ و قیمت‌ها:
+- تمام قیمت‌ها باید به تومان و عدد صحیح باشند (مثال: «۸۰۰ هزار تومان» -> 800000، «۴۰۰ تومن» در سیاق قیمت اقلام -> 400000 یا عدد گفته شده).
+- اگر برای کالایی قیمتی گفته نشده و در کاتالوگ هم نیست، قیمت را 0 (صفر) قرار دهید تا کاربر خودش تکمیل کند. هرگز قیمت اختراع نکنید!
+- اگر کالا در کاتالوگ هست و کاربر قیمت جدیدی نگفته، از basePrice کاتالوگ استفاده کنید.
+
+۴. نام مشتری:
+- نام شخص یا مشتری (مثلاً مسعود، آقای ملایی) در customerName قرار گیرد. در غیر این صورت "${customerTitle} گرامی".
+
+۵. یادداشت:
+- متن گفتار یا نام اقلام را در فیلد notes تکرار نکنید.`;
+
+    const promptText = `کاتالوگ اقلام سیستم:
+${JSON.stringify(catalogSummary, null, 2)}
+
+عنوان طرف‌حساب: ${customerTitle}
+
+${transcript ? `متن ورودی گوینده:\n"${transcript}"` : 'لطفاً صدای ضبط‌شده پیوست را با دقت گوش داده و اقلام فاکتور را استخراج کنید.'}
+
+فرمت خروجی صرفاً یک شیء JSON با ساختار زیر باشد:
 {
-  "customerName": "نام شخص یا مهمان",
-  "phone": "شماره تلفن در صورت وجود",
-  "status": "FINAL",
-  "isPurchase": false,
+  "customerName": "نام مشتری یا '${customerTitle} گرامی'",
+  "phone": "شماره همراه در صورت ذکر شدن یا خالی",
   "items": [
     {
-      "itemName": "دیزی سنگی",
-      "quantity": 2,
-      "unit": "پرس",
-      "unitPrice": 250000,
+      "itemName": "نام دقیق کالا یا خدمت",
+      "quantity": 1,
+      "unit": "واحد مثل پرس، شب، نفر/شب، عدد",
+      "unitPrice": 800000,
+      "isNewCatalogItem": false,
+      "catalogItemId": "شناسه کاتالوگ یا null",
+      "suggestedCategoryName": "نام دسته پیشنهادی",
       "discountPercent": 0,
       "description": ""
     }
   ],
-  "notes": "توضیحات کلی در صورت وجود"
+  "notes": ""
 }`;
 
+    let contentsPayload: any;
+    if (audioBase64) {
+      contentsPayload = {
+        parts: [
+          {
+            inlineData: {
+              mimeType: audioMimeType || 'audio/webm',
+              data: audioBase64,
+            },
+          },
+          { text: promptText },
+        ],
+      };
+    } else {
+      contentsPayload = promptText;
+    }
+
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
+      model: 'gemini-3.8-flash',
+      contents: contentsPayload,
       config: {
+        systemInstruction,
         responseMimeType: 'application/json',
       },
     });
@@ -93,14 +167,14 @@ ${JSON.stringify(
     try {
       data = JSON.parse(text);
     } catch {
-      // Clean potential code block markdown
       const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
       data = JSON.parse(cleaned);
     }
 
+    console.log('Gemini 3.8 Flash successfully parsed invoice:', data?.items?.length, 'items');
     return res.json({ success: true, data });
   } catch (err: any) {
-    console.error('Error in /api/parse-invoice-voice:', err);
+    console.error('Error in /api/parse-invoice-voice with Gemini 3.8 Flash:', err);
     return res.status(200).json({ fallback: true, error: err.message });
   }
 });
@@ -108,6 +182,7 @@ ${JSON.stringify(
 // Vite middleware & static serving
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

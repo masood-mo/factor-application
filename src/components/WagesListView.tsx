@@ -14,7 +14,7 @@ import {
   Clock
 } from 'lucide-react';
 import { WagePayment } from '../types';
-import { formatPersianPrice, getCurrentJalaliDate } from '../utils/persianDate';
+import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
 
 interface WagesListViewProps {
   wagePayments: WagePayment[];
@@ -193,12 +193,12 @@ export function WagesListView({
                       </span>
                     </td>
 
-                    <td className="py-3 px-3 text-slate-600 font-medium">
+                    <td className="py-3 px-3 font-medium text-slate-600">
                       {w.period || '-'}
                     </td>
 
-                    <td className="py-3 px-3 font-mono font-bold text-slate-800">
-                      {w.date}
+                    <td className="py-3 px-3 font-bold text-slate-800">
+                      {formatPersianDate(w.date)}
                     </td>
 
                     <td className="py-3 px-3 text-slate-700">

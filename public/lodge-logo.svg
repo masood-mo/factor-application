@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="terracotta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B3A22"/>
+      <stop offset="100%" stop-color="#5E2211"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F7D070"/>
+      <stop offset="100%" stop-color="#C98218"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Circle / Frame -->
+  <circle cx="100" cy="100" r="94" fill="url(#terracotta)" stroke="#C98218" stroke-width="4"/>
+  <circle cx="100" cy="100" r="86" fill="none" stroke="#F4EDE3" stroke-width="1.5" stroke-dasharray="3,3"/>
+
+  <!-- Traditional Arch Architecture (خانه برزک) -->
+  <path d="M50 145 L50 95 Q100 42 150 95 L150 145 Z" fill="#FBF8F4" opacity="0.95"/>
+  <path d="M62 145 L62 102 Q100 58 138 102 L138 145 Z" fill="#8B3A22" opacity="0.15"/>
+
+  <!-- Inner Traditional Ornate Arch / Window -->
+  <path d="M75 145 L75 110 Q100 80 125 110 L125 145 Z" fill="url(#terracotta)"/>
+  
+  <!-- Sun & Persian Geometry (خورشید ایرانی و گل محمدی) -->
+  <circle cx="100" cy="76" r="14" fill="url(#gold)" stroke="#8B3A22" stroke-width="2"/>
+  <circle cx="100" cy="76" r="7" fill="#8B3A22"/>
+
+  <!-- Sun Rays / Petals -->
+  <path d="M100 55 L100 59 M100 93 L100 97 M79 76 L83 76 M117 76 L121 76" stroke="#C98218" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M85 61 L88 64 M112 88 L115 91 M85 91 L88 88 M112 64 L115 61" stroke="#C98218" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Stars / Traditional Rosette motifs -->
+  <circle cx="65" cy="85" r="2.5" fill="url(#gold)"/>
+  <circle cx="135" cy="85" r="2.5" fill="url(#gold)"/>
+
+  <!-- Bottom Arch Floor Line -->
+  <rect x="42" y="142" width="116" height="5" rx="2.5" fill="url(#gold)"/>
+
+  <!-- Decorative Persian Text / Banner -->
+  <text x="100" y="167" text-anchor="middle" font-family="'Vazirmatn', sans-serif" font-weight="900" font-size="12" fill="#FFFFFF" letter-spacing="0.5">اقامتگاه خانه برزک</text>
+  <text x="100" y="180" text-anchor="middle" font-family="'Vazirmatn', sans-serif" font-weight="500" font-size="8" fill="#F7D070">BARZOK BOUTIQUE LODGE</text>
+</svg>

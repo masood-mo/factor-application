@@ -19,7 +19,7 @@ import {
   CreditCard
 } from 'lucide-react';
 import { Guest, SalesInvoice, WalletTransaction } from '../types';
-import { formatPersianPrice, getCurrentJalaliDate } from '../utils/persianDate';
+import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
 
 interface GuestsListViewProps {
   guests: Guest[];
@@ -379,7 +379,7 @@ export function GuestsListView({
                       >
                         <div className="flex items-center gap-3">
                           <span className="font-mono font-bold text-slate-700">{inv.serialNumber}</span>
-                          <span className="text-slate-400">{inv.date}</span>
+                          <span className="text-slate-600 font-bold">{formatPersianDate(inv.date)}</span>
                           <span className="text-slate-600">{inv.items.length} ردیف</span>
                         </div>
                         <div className="flex items-center gap-3">

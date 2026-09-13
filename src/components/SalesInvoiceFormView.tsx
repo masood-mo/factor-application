@@ -303,7 +303,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   const isFullySettled = totalPayable > 0 && totalPaidAmount >= totalPayable;
 
   // Handle Voice Parsed Invoice
-  const handleVoiceInvoiceApplied = (parsedData: any) => {
+  const handleVoiceInvoiceApplied = async (parsedData: any) => {
     const incomingName = parsedData.guestName || parsedData.customerOrVendorName || parsedData.customerName;
     if (incomingName && incomingName.trim()) setGuestName(incomingName.trim());
     if (parsedData.phone || parsedData.guestPhone) setGuestPhone(parsedData.phone || parsedData.guestPhone);
@@ -312,34 +312,65 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
     const incomingItems = parsedData.items || [];
     if (Array.isArray(incomingItems) && incomingItems.length > 0) {
-      const parsedRows: SalesInvoiceItem[] = incomingItems.map((it: any, idx: number) => {
-        const rawName = (it.itemName || it.name || '').trim();
-        
-        // Find matching catalog item if any
-        const match = existingItems.find((catIt) => {
-          if (!rawName) return false;
-          return catIt.name.toLowerCase().includes(rawName.toLowerCase()) || rawName.toLowerCase().includes(catIt.name.toLowerCase());
-        });
+      const parsedRows: SalesInvoiceItem[] = [];
 
-        const base = Number(it.unitPrice) || Number(it.basePrice) || (match ? match.basePrice : 0);
-        const unit = it.unit || (match ? match.unit : settings.units[0] || 'عدد');
+      for (let idx = 0; idx < incomingItems.length; idx++) {
+        const it = incomingItems[idx];
+        const rawName = (it.itemName || it.name || '').trim();
+
+        // Exact match with existing catalog
+        const exactMatch = existingItems.find(
+          (catIt) => catIt.name.trim().toLowerCase() === rawName.toLowerCase()
+        );
+
+        let isNew = Boolean(it.isNewCatalogItem);
+        let catalogId = it.catalogItemId || (exactMatch ? exactMatch.id : undefined);
+        let finalItemName = exactMatch ? exactMatch.name : (rawName || `سفارش ${idx + 1}`);
+        let base = Number(it.unitPrice) || Number(it.basePrice) || (exactMatch ? exactMatch.basePrice : 0);
+        let unit = it.unit || (exactMatch ? exactMatch.unit : settings.units[0] || 'عدد');
+
+        if (!exactMatch && (!catalogId || isNew)) {
+          isNew = true;
+          // Auto add to catalog in database
+          if (onAutoCreateItem) {
+            try {
+              const created = await onAutoCreateItem({
+                name: finalItemName,
+                unit: unit || 'عدد',
+                basePrice: base || 0,
+                categoryName: it.suggestedCategoryName || 'سایر خدمات و پذیرایی اختصاصی',
+                type: 'GOODS'
+              });
+              if (created && created.id) {
+                catalogId = created.id;
+              }
+            } catch (err) {
+              console.warn('Auto create catalog item notice:', err);
+            }
+          }
+        }
+
         const qty = Number(it.quantity) || 1;
 
-        return recalculateRow({
-          id: `voice-row-${Date.now()}-${idx + 1}`,
-          rowNum: idx + 1,
-          itemName: match ? match.name : rawName || `سفارش ${idx + 1}`,
-          unit,
-          quantity: qty,
-          basePrice: base,
-          totalPrice: qty * base,
-          discountPercent: Number(it.discountPercent) || 0,
-          discountAmount: 0,
-          taxAmount: 0,
-          payableAmount: 0,
-          description: it.description || ''
-        });
-      });
+        parsedRows.push(
+          recalculateRow({
+            id: `voice-row-${Date.now()}-${idx + 1}`,
+            rowNum: idx + 1,
+            itemId: catalogId,
+            itemName: finalItemName,
+            unit,
+            quantity: qty,
+            basePrice: base,
+            totalPrice: qty * base,
+            discountPercent: Number(it.discountPercent) || 0,
+            discountAmount: 0,
+            taxAmount: 0,
+            payableAmount: 0,
+            description: it.description || '',
+            isNewlyAddedToCatalog: isNew
+          })
+        );
+      }
 
       setItems(parsedRows);
     }
@@ -619,8 +650,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                 type="text"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                placeholder="1403/01/01"
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden bg-white"
+                placeholder="۱۴۰۳/۰۱/۰۱"
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-700 outline-hidden bg-white"
                 required
               />
             </div>
@@ -751,19 +782,43 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {items.map((row, idx) => (
-                    <tr key={row.id || idx} className="hover:bg-amber-50/30">
-                      <td className="p-2 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                    <tr
+                      key={row.id || idx}
+                      className={`transition-colors ${
+                        row.isNewlyAddedToCatalog
+                          ? 'bg-amber-100/70 hover:bg-amber-100 border-y-2 border-amber-400'
+                          : 'hover:bg-amber-50/30'
+                      }`}
+                    >
+                      <td className="p-2 text-center font-mono font-bold text-slate-400">
+                        {row.isNewlyAddedToCatalog ? (
+                          <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="کالای تازه افزوده شده به کاتالوگ" />
+                        ) : (
+                          idx + 1
+                        )}
+                      </td>
                       
                       {/* Item Name input */}
                       <td className="p-2">
-                        <input
-                          type="text"
-                          value={row.itemName}
-                          onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
-                          placeholder="نام کالا، غذا، اقامت، سوغات..."
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-700 outline-hidden bg-white"
-                          required
-                        />
+                        <div className="flex flex-col gap-1">
+                          <input
+                            type="text"
+                            value={row.itemName}
+                            onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
+                            placeholder="نام کالا، غذا، اقامت، سوغات..."
+                            className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-700 outline-hidden bg-white ${
+                              row.isNewlyAddedToCatalog
+                                ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold'
+                                : 'border-slate-300'
+                            }`}
+                            required
+                          />
+                          {row.isNewlyAddedToCatalog && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-900 bg-amber-200/90 border border-amber-300 px-1.5 py-0.5 rounded-md font-bold w-fit">
+                              تازه‌افزوده به کاتالوگ (قابل ویرایش یا حذف)
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Catalog Select Dropdown */}
@@ -811,10 +866,12 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                           type="number"
                           min="0"
                           step="1000"
-                          value={row.basePrice}
+                          value={row.basePrice === 0 ? '' : row.basePrice}
+                          placeholder="قیمت (خالی)"
                           onChange={(e) => handleItemChange(idx, 'basePrice', e.target.value)}
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-mono focus:ring-1 focus:ring-amber-700 outline-hidden bg-white text-left dir-ltr"
-                          required
+                          className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono focus:ring-1 focus:ring-amber-700 outline-hidden bg-white text-left dir-ltr ${
+                            row.basePrice === 0 ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300'
+                          }`}
                         />
                       </td>
 

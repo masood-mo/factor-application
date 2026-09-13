@@ -208,8 +208,8 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                   required
-                  placeholder="YYYY/MM/DD"
-                  className="bg-emerald-950 text-emerald-100 font-mono px-2 py-0.5 rounded-md border border-emerald-700 w-28 text-center outline-hidden"
+                  placeholder="۱۴۰۳/۰۱/۰۱"
+                  className="bg-emerald-950 text-emerald-100 font-bold px-2 py-0.5 rounded-md border border-emerald-700 w-28 text-center outline-hidden"
                 />
               </div>
             </div>

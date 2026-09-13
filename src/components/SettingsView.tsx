@@ -15,7 +15,9 @@ import {
   MessageSquare,
   BellRing,
   PieChart,
-  UserCheck
+  UserCheck,
+  Download,
+  FolderArchive
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -669,6 +671,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
                 </button>
               </span>
             ))}
+          </div>
+        </div>
+
+        {/* Source Code & Backup Export (ZIP) */}
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50/50 rounded-3xl p-6 border border-amber-900/20 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-amber-900/10">
+            <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+              <FolderArchive className="w-4 h-4 text-amber-800" />
+              دریافت نسخه پشتیبان و سورس‌کد کامل پروژه (فایل ZIP)
+            </h3>
+            <span className="text-[10px] bg-amber-800/10 text-amber-900 font-bold px-2 py-0.5 rounded-full">
+              خروجی مستقیم
+            </span>
+          </div>
+
+          <p className="text-xs text-slate-600 leading-relaxed">
+            می‌توانید کل ساختار پروژه شامل فایل‌های برنامه، کامپوننت‌های فرانت‌اند، تنظیمات، اسکریپت‌های سرور Express و استایل‌ها را در قالب یک فایل فشرده ZIP دانلود و روی کامپیوتر خود اجرا نمایید.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <a
+              href="/api/download-zip"
+              download="factor-application.zip"
+              className="inline-flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white font-bold px-6 py-2.5 rounded-2xl text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-amber-300" />
+              دانلود سورس کامل پروژه (factor-application.zip)
+            </a>
+            <span className="text-[11px] text-slate-500 font-medium">
+              (پوشه‌های حجیم node_modules و dist فیلتر شده‌اند تا حجم فایل بهینه باشد)
+            </span>
           </div>
         </div>
 

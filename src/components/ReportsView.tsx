@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { SalesInvoice, PurchaseInvoice, Category } from '../types';
 import { formatPersianPrice, numberToWordsPersian } from '../utils/numberToWords';
-import { isDateInRange } from '../utils/persianDate';
+import { isDateInRange, formatPersianDate } from '../utils/persianDate';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import {
   BarChart3,
@@ -572,7 +572,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                   {filteredPurchases.map((inv) => (
                     <tr key={inv.id} className="hover:bg-amber-50/20">
                       <td className="px-3 py-2.5 text-center font-mono font-bold text-emerald-800">{inv.serialNumber}</td>
-                      <td className="px-3 py-2.5 font-mono text-slate-600">{inv.date}</td>
+                      <td className="px-3 py-2.5 font-bold text-slate-700">{formatPersianDate(inv.date)}</td>
                       <td className="px-4 py-2.5 font-bold text-slate-800">{inv.vendorName}</td>
                       <td className="px-3 py-2.5 font-black text-rose-800 font-mono">{formatPersianPrice(inv.totalPaid)}</td>
                       <td className="px-3 py-2.5 text-center">
@@ -653,7 +653,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                       ) : (
                         selectedGuestInvoices.map((inv) => (
                           <tr key={inv.id} className="hover:bg-amber-50/20">
-                            <td className="px-3 py-2.5 font-mono text-slate-800 font-bold">{inv.date}</td>
+                            <td className="px-3 py-2.5 font-bold text-slate-800">{formatPersianDate(inv.date)}</td>
                             <td className="px-3 py-2.5 font-mono text-amber-900 font-bold">{inv.serialNumber}</td>
                             <td className="px-3 py-2.5 text-slate-600">{inv.items?.length || 0} ردیف</td>
                             <td className="px-4 py-2.5 font-black text-amber-950 font-mono">{formatPersianPrice(inv.totalPayable)} تومان</td>

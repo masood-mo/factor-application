@@ -17,7 +17,7 @@ import {
   BellRing
 } from 'lucide-react';
 import { Cheque, LodgeSettings } from '../types';
-import { formatPersianPrice, getCurrentJalaliDate, getChequeAlarmStatus } from '../utils/persianDate';
+import { formatPersianPrice, getCurrentJalaliDate, getChequeAlarmStatus, formatPersianDate } from '../utils/persianDate';
 
 interface ChequesListViewProps {
   cheques: Cheque[];
@@ -296,8 +296,8 @@ export function ChequesListView({
                         {formatPersianPrice(chq.amount)} <span className="text-[10px] font-normal">تومان</span>
                       </td>
 
-                      <td className="py-3 px-3 font-mono font-bold text-slate-800">
-                        {chq.dueDate}
+                      <td className="py-3 px-3 font-bold text-slate-800">
+                        {formatPersianDate(chq.dueDate)}
                       </td>
 
                       <td className="py-3 px-3">

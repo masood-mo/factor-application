@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ActiveTab, LodgeSettings, Cheque } from '../types';
 import {
   FileText,
@@ -15,9 +15,15 @@ import {
   Users,
   Banknote,
   Calculator,
-  BellRing
+  BellRing,
+  Calendar,
+  ChevronDown,
+  Sparkles,
+  ArrowRight,
+  TrendingUp,
+  FolderOpen
 } from 'lucide-react';
-import { getChequeAlarmStatus } from '../utils/persianDate';
+import { getChequeAlarmStatus, formatPersianDate, getCurrentJalaliDate } from '../utils/persianDate';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -35,7 +41,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const customerTitle = settings.customerTitle || 'مهمان';
   const alarmDays = settings.chequeAlarmDays ?? 2;
 
@@ -54,9 +62,21 @@ export const Header: React.FC<HeaderProps> = ({
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
 
@@ -70,207 +90,462 @@ export const Header: React.FC<HeaderProps> = ({
     setDeferredPrompt(null);
   };
 
-  const navItems = [
-    { id: 'new_sales_invoice' as ActiveTab, label: `فاکتور فروش جدید`, icon: PlusCircle },
-    { id: 'sales_invoices_list' as ActiveTab, label: 'فاکتورهای فروش', icon: FileText },
-    { id: 'new_purchase_invoice' as ActiveTab, label: 'فاکتور خرید جدید', icon: ShoppingBag },
-    { id: 'purchase_invoices_list' as ActiveTab, label: 'فاکتورهای خرید', icon: CreditCard },
-    { id: 'guests_list' as ActiveTab, label: `${customerTitle}‌ها و کیف پول`, icon: Users },
+  // 4 Main Menu Categories with clean sub-menus
+  const menuCategories = [
     {
-      id: 'cheques_list' as ActiveTab,
-      label: 'چک‌ها و سررسید',
-      icon: CreditCard,
-      badge: dueChequesCount > 0 ? dueChequesCount : undefined
+      id: 'sales_group',
+      title: 'فروش و مهمانان',
+      shortTitle: 'فروش',
+      icon: ShoppingBag,
+      subItems: [
+        {
+          id: 'new_sales_invoice' as ActiveTab,
+          label: 'صدور فاکتور فروش جدید',
+          desc: 'ثبت سریع اقلام یا صدای هوشمند',
+          icon: PlusCircle,
+          highlight: true
+        },
+        {
+          id: 'sales_invoices_list' as ActiveTab,
+          label: 'لیست فاکتورهای فروش',
+          desc: 'مشاهده، چاپ، تسویه و پیش‌فاکتورها',
+          icon: FileText
+        },
+        {
+          id: 'guests_list' as ActiveTab,
+          label: `${customerTitle}‌ها و کیف پول`,
+          desc: 'مانده حساب، شارژ و سوابق رفت‌وآمد',
+          icon: Users
+        }
+      ]
     },
-    { id: 'wages_list' as ActiveTab, label: 'دستمزد و حقوق', icon: Banknote },
-    { id: 'budget_investor' as ActiveTab, label: 'بودجه و سرمایه‌گذار', icon: Calculator },
-    { id: 'items_catalog' as ActiveTab, label: 'کالاها و خدمات', icon: List },
-    { id: 'reports' as ActiveTab, label: 'گزارش‌های مالی', icon: BarChart3 },
-    { id: 'settings' as ActiveTab, label: 'تنظیمات', icon: Settings },
+    {
+      id: 'purchase_group',
+      title: 'خرید و هزینه‌ها',
+      shortTitle: 'خرید',
+      icon: CreditCard,
+      subItems: [
+        {
+          id: 'new_purchase_invoice' as ActiveTab,
+          label: 'ثبت فاکتور خرید جدید',
+          desc: 'ثبت خرید اقلام و مواد اولیه',
+          icon: PlusCircle
+        },
+        {
+          id: 'purchase_invoices_list' as ActiveTab,
+          label: 'لیست فاکتورهای خرید',
+          desc: 'بدهی به تامین‌کنندگان و اصناف',
+          icon: CreditCard
+        },
+        {
+          id: 'wages_list' as ActiveTab,
+          label: 'دستمزد و حقوق پرسنل',
+          desc: 'ثبت پرداختی‌ها و تسویه کارکنان',
+          icon: Banknote
+        }
+      ]
+    },
+    {
+      id: 'treasury_group',
+      title: 'خزانه‌داری و مالی',
+      shortTitle: 'مالی',
+      icon: Calculator,
+      badge: dueChequesCount > 0 ? dueChequesCount : undefined,
+      subItems: [
+        {
+          id: 'cheques_list' as ActiveTab,
+          label: 'مدیریت چک‌ها و سررسید',
+          desc: 'هشدارهای سررسید چک‌های دریافتی/پرداختی',
+          icon: CreditCard,
+          badge: dueChequesCount > 0 ? dueChequesCount : undefined
+        },
+        {
+          id: 'budget_investor' as ActiveTab,
+          label: 'بودجه کل و سرمایه‌گذار',
+          desc: 'محاسبه سهم سود، درآمد و هزینه‌ها',
+          icon: Calculator
+        }
+      ]
+    },
+    {
+      id: 'system_group',
+      title: 'پایه و گزارش‌ها',
+      shortTitle: 'پایه',
+      icon: FolderOpen,
+      subItems: [
+        {
+          id: 'items_catalog' as ActiveTab,
+          label: 'کاتالوگ کالاها و خدمات',
+          desc: 'تعریف اتاق‌ها، غذاها و خدمات بوم‌گردی',
+          icon: List
+        },
+        {
+          id: 'reports' as ActiveTab,
+          label: 'گزارش‌های مالی و تحلیلی',
+          desc: 'سود و زیان، تراز و نمودارهای آماری',
+          icon: BarChart3
+        },
+        {
+          id: 'settings' as ActiveTab,
+          label: 'تنظیمات اقامتگاه',
+          desc: 'مشخصات، چاپ، درصدها و پشتیبان‌گیری',
+          icon: Settings
+        }
+      ]
+    }
   ];
 
+  // Helper to check if a main menu group is currently active
+  const isGroupActive = (category: typeof menuCategories[0]) => {
+    return category.subItems.some((sub) => sub.id === activeTab);
+  };
+
+  const handleSelectTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    setOpenDropdown(null);
+    setMobileMenuOpen(false);
+  };
+
   return (
-    <header className="bg-white border-b border-amber-900/15 sticky top-0 z-30 shadow-xs no-print backdrop-blur-md bg-white/95">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          
-          {/* Lodge Brand & Logo */}
-          <div className="flex items-center space-x-3 space-x-reverse">
-            {settings.lodgeLogo ? (
-              <img
-                src={settings.lodgeLogo}
-                alt={settings.lodgeName}
-                className="w-10 h-10 rounded-xl object-cover border border-amber-900/20 shadow-xs"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-xl bg-amber-800 text-amber-200 flex items-center justify-center font-bold shadow-xs border border-amber-900/30">
-                <Building2 className="w-5 h-5 text-amber-200" />
+    <>
+      <header className="bg-white/95 border-b border-amber-900/15 sticky top-0 z-40 shadow-xs no-print backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            
+            {/* Brand Logo & Title */}
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              {settings.lodgeLogo ? (
+                <img
+                  src={settings.lodgeLogo}
+                  alt={settings.lodgeName}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-amber-900/20 shadow-xs"
+                />
+              ) : (
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-800 text-amber-200 flex items-center justify-center font-bold shadow-xs border border-amber-900/30">
+                  <Building2 className="w-5 h-5 text-amber-200" />
+                </div>
+              )}
+              <div>
+                <h1 className="text-xs sm:text-sm md:text-base font-black text-slate-900 leading-tight flex items-center gap-1.5">
+                  {settings.lodgeName || 'اقامتگاه بوم‌گردی خانه برزک'}
+                </h1>
+                <p className="text-[10px] sm:text-[11px] text-amber-900/70 font-medium hidden xs:block">
+                  سیستم هوشمند حسابداری، بودجه و فاکتور
+                </p>
               </div>
-            )}
-            <div>
-              <h1 className="text-sm sm:text-base font-black text-slate-900 leading-tight flex items-center gap-1.5">
-                {settings.lodgeName || 'اقامتگاه بوم‌گردی خانه برزک'}
-              </h1>
-              <p className="text-[11px] text-amber-900/70 font-medium">حسابداری، بودجه و فاکتورینگ</p>
+            </div>
+
+            {/* Desktop Structured Main Menus with Dropdowns */}
+            <nav ref={dropdownRef} className="hidden md:flex items-center gap-2">
+              {menuCategories.map((cat) => {
+                const CatIcon = cat.icon;
+                const active = isGroupActive(cat);
+                const isOpen = openDropdown === cat.id;
+
+                return (
+                  <div key={cat.id} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(isOpen ? null : cat.id)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        active
+                          ? 'bg-amber-800 text-white shadow-xs'
+                          : 'text-slate-700 hover:text-amber-950 hover:bg-amber-50'
+                      }`}
+                    >
+                      <CatIcon className={`w-3.5 h-3.5 ${active ? 'text-amber-300' : 'text-slate-400'}`} />
+                      <span>{cat.title}</span>
+                      {cat.badge !== undefined && (
+                        <span className="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse shadow-xs">
+                          {cat.badge}
+                        </span>
+                      )}
+                      <ChevronDown
+                        className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''} ${
+                          active ? 'text-amber-200' : 'text-slate-400'
+                        }`}
+                      />
+                    </button>
+
+                    {/* Dropdown Menu Window */}
+                    {isOpen && (
+                      <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-amber-900/15 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 text-right">
+                        <div className="text-[10px] font-bold text-amber-900/60 px-2.5 py-1 mb-1 border-b border-slate-100">
+                          بخش {cat.title}
+                        </div>
+                        <div className="space-y-1">
+                          {cat.subItems.map((sub) => {
+                            const SubIcon = sub.icon;
+                            const isSubActive = activeTab === sub.id;
+                            return (
+                              <button
+                                key={sub.id}
+                                type="button"
+                                onClick={() => handleSelectTab(sub.id)}
+                                className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-right transition-all cursor-pointer ${
+                                  isSubActive
+                                    ? 'bg-amber-100/80 text-amber-950 font-black'
+                                    : 'hover:bg-slate-50 text-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                    isSubActive
+                                      ? 'bg-amber-800 text-white'
+                                      : sub.highlight
+                                      ? 'bg-amber-100 text-amber-900'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  <SubIcon className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold truncate">{sub.label}</span>
+                                    {sub.badge !== undefined && (
+                                      <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                                        {sub.badge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 truncate mt-0.5">{sub.desc}</p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Instant Action: New Invoice */}
+              <button
+                type="button"
+                onClick={() => handleSelectTab('new_sales_invoice')}
+                className="flex items-center gap-1.5 bg-gradient-to-l from-amber-700 to-amber-800 hover:from-amber-800 hover:to-amber-900 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer ml-1"
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-amber-300" />
+                <span>+ فاکتور فروش</span>
+              </button>
+            </nav>
+
+            {/* Header Right Controls */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              
+              {/* Cheque Due Alarm Bell (Direct Click) */}
+              {dueChequesCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTab('cheques_list')}
+                  className="flex items-center gap-1 bg-rose-50 border border-rose-200 text-rose-700 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-xs hover:bg-rose-100 transition-all cursor-pointer"
+                  title={`${dueChequesCount} چک در آستانه سررسید`}
+                >
+                  <BellRing className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
+                  <span className="hidden sm:inline">سررسید چک:</span>
+                  <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+                    {dueChequesCount}
+                  </span>
+                </button>
+              )}
+
+              {/* Jalali Date Badge */}
+              <div className="hidden lg:flex items-center gap-1.5 bg-amber-50/80 border border-amber-200/80 px-2.5 py-1.5 rounded-xl text-xs font-bold text-amber-950 shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-amber-800" />
+                <span>{formatPersianDate(getCurrentJalaliDate())}</span>
+              </div>
+
+              {/* Source ZIP Download */}
+              <a
+                href="/api/download-zip"
+                download="factor-application.zip"
+                className="hidden sm:flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                title="دانلود فایل ZIP سورس‌کد کامل پروژه"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-800" />
+                <span className="hidden md:inline">دانلود ZIP</span>
+              </a>
+
+              {/* PWA Install */}
+              {isInstallable && (
+                <button
+                  type="button"
+                  onClick={handleInstallClick}
+                  className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  title="نصب اپلیکیشن روی دستگاه"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">نصب برنامه</span>
+                </button>
+              )}
+
+              {/* Mobile Drawer Trigger */}
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="md:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
+                aria-label="منوی اصلی"
+              >
+                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Mobile Full Categorized Drawer */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-slate-50 border-b border-amber-900/20 px-3 pt-3 pb-6 max-h-[80vh] overflow-y-auto shadow-2xl animate-in slide-in-from-top duration-200">
+            <div className="flex items-center justify-between px-1 pb-2 mb-2 border-b border-slate-200">
+              <span className="text-xs font-bold text-slate-500">منوی بخش‌های نرم‌افزار</span>
+              <span className="text-[11px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">
+                {formatPersianDate(getCurrentJalaliDate())}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {menuCategories.map((cat) => {
+                const CatIcon = cat.icon;
+                return (
+                  <div key={cat.id} className="bg-white rounded-2xl p-2.5 border border-slate-200/80 shadow-2xs">
+                    <div className="flex items-center gap-2 px-2 py-1 mb-1.5 text-xs font-bold text-amber-900 border-b border-slate-100">
+                      <CatIcon className="w-4 h-4 text-amber-800" />
+                      <span>{cat.title}</span>
+                      {cat.badge !== undefined && (
+                        <span className="mr-auto bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                          {cat.badge} چک
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 gap-1">
+                      {cat.subItems.map((sub) => {
+                        const SubIcon = sub.icon;
+                        const isSubActive = activeTab === sub.id;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => handleSelectTab(sub.id)}
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              isSubActive
+                                ? 'bg-amber-800 text-white shadow-xs'
+                                : 'text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <SubIcon className={`w-4 h-4 ${isSubActive ? 'text-amber-300' : 'text-slate-500'}`} />
+                              <span>{sub.label}</span>
+                            </div>
+                            {sub.badge !== undefined && (
+                              <span className="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                                {sub.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* ZIP Download in Mobile Drawer */}
+              <div className="pt-2">
+                <a
+                  href="/api/download-zip"
+                  download="factor-application.zip"
+                  className="w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-bold text-amber-950 bg-amber-100/70 hover:bg-amber-100 border border-amber-300 transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Download className="w-4 h-4 text-amber-800" />
+                    <span>دانلود سورس‌کد کامل پروژه (ZIP)</span>
+                  </div>
+                  <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded-md">ZIP</span>
+                </a>
+              </div>
             </div>
           </div>
+        )}
+      </header>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden xl:flex items-center gap-1 overflow-x-auto py-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-800 text-white shadow-xs'
-                      : 'text-slate-700 hover:text-amber-950 hover:bg-amber-50'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-300' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                  {item.badge !== undefined && (
-                    <span className="bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse shadow-xs">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+      {/* Mobile Fixed Bottom Navigation Bar */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white/98 border-t border-amber-900/15 z-40 shadow-2xl backdrop-blur-lg px-2 py-1.5 no-print">
+        <div className="flex items-center justify-around">
+          
+          {/* 1. Sales */}
+          <button
+            type="button"
+            onClick={() => handleSelectTab('sales_invoices_list')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'sales_invoices_list' || activeTab === 'guests_list'
+                ? 'text-amber-800 font-black'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <FileText className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">فروش</span>
+          </button>
 
-          {/* Medium Screen Dropdown or Navigation Buttons */}
-          <div className="hidden md:flex xl:hidden items-center gap-1.5">
+          {/* 2. Purchases */}
+          <button
+            type="button"
+            onClick={() => handleSelectTab('purchase_invoices_list')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'purchase_invoices_list' || activeTab === 'new_purchase_invoice' || activeTab === 'wages_list'
+                ? 'text-amber-800 font-black'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <CreditCard className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">خرید</span>
+          </button>
+
+          {/* 3. Center Action Button: + New Invoice */}
+          <div className="relative -top-4">
             <button
-              onClick={() => setActiveTab('new_sales_invoice')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-                activeTab === 'new_sales_invoice' ? 'bg-amber-800 text-white' : 'bg-amber-50 text-amber-900'
-              }`}
+              type="button"
+              onClick={() => handleSelectTab('new_sales_invoice')}
+              className="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-800 to-amber-600 text-white flex items-center justify-center shadow-lg border-2 border-white hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              title="صدور فاکتور جدید"
             >
-              فاکتور فروش
-            </button>
-            <button
-              onClick={() => setActiveTab('guests_list')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-                activeTab === 'guests_list' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {customerTitle}‌ها
-            </button>
-            <button
-              onClick={() => setActiveTab('cheques_list')}
-              className={`relative px-3 py-1.5 rounded-xl text-xs font-bold ${
-                activeTab === 'cheques_list' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              چک‌ها
-              {dueChequesCount > 0 && (
-                <span className="mr-1 bg-rose-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                  {dueChequesCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('budget_investor')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-                activeTab === 'budget_investor' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              بودجه و سود
-            </button>
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-                activeTab === 'reports' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              گزارش‌ها
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`p-2 rounded-xl text-xs font-bold ${
-                activeTab === 'settings' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-700'
-              }`}
-              title="تنظیمات"
-            >
-              <Settings className="w-4 h-4" />
+              <PlusCircle className="w-6 h-6 text-amber-200" />
             </button>
           </div>
 
-          {/* Right Controls: PWA Install & Mobile Menu Toggle */}
-          <div className="flex items-center gap-2">
+          {/* 4. Cheques & Treasury */}
+          <button
+            type="button"
+            onClick={() => handleSelectTab('cheques_list')}
+            className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+              activeTab === 'cheques_list' || activeTab === 'budget_investor'
+                ? 'text-amber-800 font-black'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Calculator className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">مالی و چک</span>
             {dueChequesCount > 0 && (
-              <button
-                onClick={() => setActiveTab('cheques_list')}
-                className="flex items-center gap-1 bg-rose-50 border border-rose-200 text-rose-700 px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-xs hover:bg-rose-100 transition-all cursor-pointer"
-                title={`${dueChequesCount} چک در آستانه سررسید`}
-              >
-                <BellRing className="w-3.5 h-3.5 text-rose-600 animate-bounce" />
-                <span className="hidden sm:inline">سررسید چک:</span>
-                <span className="bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-mono">
-                  {dueChequesCount}
-                </span>
-              </button>
+              <span className="absolute top-0 right-1.5 w-2 h-2 rounded-full bg-rose-600 ring-2 ring-white animate-ping" />
             )}
+          </button>
 
-            {isInstallable && (
-              <button
-                onClick={handleInstallClick}
-                className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1.5 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
-                title="نصب اپلیکیشن روی دستگاه"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">نصب برنامه</span>
-              </button>
-            )}
+          {/* 5. Full Menu */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+              mobileMenuOpen || activeTab === 'items_catalog' || activeTab === 'reports' || activeTab === 'settings'
+                ? 'text-amber-800 font-black'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Menu className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px]">سایر منوها</span>
+          </button>
 
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="xl:hidden p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-hidden"
-              aria-label="منو"
-            >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
         </div>
-      </div>
-
-      {/* Mobile Drawer Navigation */}
-      {mobileMenuOpen && (
-        <div className="xl:hidden bg-white border-b border-slate-200 px-4 pt-2 pb-4 space-y-1 max-h-[75vh] overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-amber-800 text-white'
-                    : 'text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-300' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge !== undefined && (
-                  <span className="bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </header>
+      </nav>
+    </>
   );
 };

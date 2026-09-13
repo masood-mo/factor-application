@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PurchaseInvoice } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
-import { isDateInRange } from '../utils/persianDate';
+import { isDateInRange, formatPersianDate } from '../utils/persianDate';
 import { ShoppingBag, Search, Calendar, Edit3, Trash2, CheckCircle2, Clock, Filter, Plus } from 'lucide-react';
 
 interface PurchaseInvoicesListViewProps {
@@ -171,7 +171,7 @@ export const PurchaseInvoicesListView: React.FC<PurchaseInvoicesListViewProps> =
                     <td className="px-3 py-3 font-mono font-bold text-emerald-800 text-center">
                       {inv.serialNumber}
                     </td>
-                    <td className="px-3 py-3 font-mono text-slate-600">{inv.date}</td>
+                    <td className="px-3 py-3 font-bold text-slate-700">{formatPersianDate(inv.date)}</td>
                     <td className="px-4 py-3 font-bold text-slate-800">{inv.vendorName}</td>
                     <td className="px-3 py-3 text-slate-600 font-medium">
                       {inv.items?.length || 0} ردیف

@@ -60,6 +60,7 @@ export interface SalesInvoiceItem {
   taxAmount: number;
   payableAmount: number;
   description: string;
+  isNewlyAddedToCatalog?: boolean;
 }
 
 export interface PaymentRecord {

@@ -132,8 +132,25 @@ export function formatPersianPrice(num: number | string | undefined | null): str
   return Number(num).toLocaleString('fa-IR');
 }
 
-export function toPersianDigits(n: number | string): string {
+export function toPersianDigits(n: number | string | undefined | null): string {
   if (n === undefined || n === null) return '';
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
   return n.toString().replace(/\d/g, (x) => persianDigits[parseInt(x, 10)]);
+}
+
+// Formats any Jalali or Gregorian date string into standard Jalali with Persian numerals (e.g. ۱۴۰۳/۰۶/۲۰)
+export function formatPersianDate(dateStr?: string | Date): string {
+  if (!dateStr) return toPersianDigits(getCurrentJalaliDate());
+  let str = '';
+  if (typeof dateStr === 'string') {
+    if (dateStr.includes('/')) {
+      str = dateStr;
+    } else {
+      const d = new Date(dateStr);
+      str = isNaN(d.getTime()) ? dateStr : formatJalaliDate(d);
+    }
+  } else {
+    str = formatJalaliDate(dateStr);
+  }
+  return toPersianDigits(str);
 }

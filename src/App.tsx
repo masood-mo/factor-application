@@ -316,7 +316,7 @@ export default function App() {
       />
 
       {/* Main App Content Views */}
-      <main className="flex-1 pb-12">
+      <main className="flex-1 pb-24 md:pb-12">
         {/* 1. New or Edit Sales Invoice Form */}
         {activeTab === 'new_sales_invoice' && (
           <SalesInvoiceFormView
