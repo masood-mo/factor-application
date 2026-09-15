@@ -17,7 +17,8 @@ import {
   PieChart,
   UserCheck,
   Download,
-  FolderArchive
+  FolderArchive,
+  Award
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -26,6 +27,39 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSettings }) => {
+  const initialBudgetRows = (() => {
+    let rows =
+      settings.budgetRows && settings.budgetRows.length > 0
+        ? [...settings.budgetRows]
+        : [
+            { id: 'b-1', name: 'مواد غذایی، پذیرایی و صبحانه', percentage: 25 },
+            { id: 'b-2', name: 'حقوق و دستمزد پرسنل', percentage: 20 },
+            {
+              id: 'b-investor',
+              name: 'سهم سود مصوب سرمایه‌گذار',
+              percentage: settings.investorSharePercent ?? 35,
+              description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه',
+              isInvestorShare: true
+            },
+            { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 10 },
+            { id: 'b-4', name: 'انرژی، اینترنت و قبوض', percentage: 5 },
+            { id: 'b-5', name: 'تبلیغات و توسعه گردشگری', percentage: 5 }
+          ];
+    const hasInvestor = rows.some((r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار'));
+    if (!hasInvestor) {
+      rows.push({
+        id: 'b-investor',
+        name: 'سهم سود مصوب سرمایه‌گذار',
+        percentage: settings.investorSharePercent ?? 35,
+        description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه',
+        isInvestorShare: true
+      });
+    } else {
+      rows = rows.map((r) => (r.name.includes('سرمایه‌گذار') ? { ...r, isInvestorShare: true } : r));
+    }
+    return rows;
+  })();
+
   const [formData, setFormData] = useState<LodgeSettings>({
     ...settings,
     customerTitle: settings.customerTitle || 'مهمان',
@@ -39,17 +73,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
       settings.whatsappTemplate ||
       settings.whatsappShareTemplate ||
       'دوست گرامی با احترام، فاکتور شما به پیوست تقدیم می‌گردد:',
-    budgetRows:
-      settings.budgetRows && settings.budgetRows.length > 0
-        ? settings.budgetRows
-        : [
-            { id: 'b-1', name: 'مواد غذایی، پذیرایی و صبحانه', percentage: 30 },
-            { id: 'b-2', name: 'حقوق و دستمزد پرسنل', percentage: 25 },
-            { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 15 },
-            { id: 'b-4', name: 'انرژی، اینترنت و قبوض', percentage: 10 },
-            { id: 'b-5', name: 'تبلیغات و توسعه گردشگری', percentage: 10 },
-            { id: 'b-6', name: 'صندوق ذخیره احتیاطی', percentage: 10 }
-          ]
+    budgetRows: initialBudgetRows
   });
 
   const [newUnit, setNewUnit] = useState<string>('');
@@ -132,10 +156,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
   };
 
   const handleUpdateBudgetRowPercent = (rowId: string, percent: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      budgetRows: (prev.budgetRows || []).map((r) => (r.id === rowId ? { ...r, percentage: percent } : r))
-    }));
+    setFormData((prev) => {
+      const updatedRows = (prev.budgetRows || []).map((r) =>
+        r.id === rowId ? { ...r, percentage: percent } : r
+      );
+      const investorRow = updatedRows.find(
+        (r) => r.id === rowId && (r.isInvestorShare || r.name.includes('سرمایه‌گذار'))
+      );
+      return {
+        ...prev,
+        budgetRows: updatedRows,
+        ...(investorRow ? { investorSharePercent: percent } : {})
+      };
+    });
   };
 
   const totalBudgetPercent = (formData.budgetRows || []).reduce(
@@ -147,7 +180,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
     e.preventDefault();
     setSaving(true);
     try {
-      await onSaveSettings(formData);
+      const investorRow = (formData.budgetRows || []).find(
+        (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
+      );
+      const finalData: LodgeSettings = {
+        ...formData,
+        investorSharePercent: investorRow ? Number(investorRow.percentage) : (formData.investorSharePercent || 35)
+      };
+      await onSaveSettings(finalData);
       setSuccessMessage('تنظیمات با موفقیت ذخیره شد.');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
@@ -474,21 +514,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
                 <span className="text-[10px] text-slate-400 mt-1 block">درصد ارزش افزوده پیش‌فرض</span>
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                درصد پیش‌فرض سهم سرمایه‌گذار (%)
-              </label>
-              <input
-                type="number"
-                name="investorSharePercent"
-                min="0"
-                max="100"
-                value={formData.investorSharePercent ?? 35}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold focus:ring-2 focus:ring-amber-700 outline-hidden"
-              />
-            </div>
           </div>
 
           {/* WhatsApp & Telegram Share Template */}
@@ -601,31 +626,76 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-            {(formData.budgetRows || []).map((row) => (
-              <div
-                key={row.id}
-                className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs"
-              >
-                <span className="font-bold text-slate-800">{row.name}</span>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={row.percentage}
-                    onChange={(e) => handleUpdateBudgetRowPercent(row.id, Number(e.target.value))}
-                    className="w-16 p-1 border border-slate-300 rounded-lg text-center font-mono font-bold text-xs bg-white"
-                  />
-                  <span className="font-bold text-slate-600">٪</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveBudgetRow(row.id)}
-                    className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+            {(formData.budgetRows || []).map((row) => {
+              const isInvestorRow = row.isInvestorShare || row.name.includes('سرمایه‌گذار');
+              return (
+                <div
+                  key={row.id}
+                  className={`flex items-center justify-between p-3 rounded-2xl border text-xs transition-all ${
+                    isInvestorRow
+                      ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300/60 shadow-xs'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-bold text-slate-800">{row.name}</span>
+                    {isInvestorRow && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-200/70 px-1.5 py-0.5 rounded-md w-fit border border-amber-300">
+                        <Award className="w-3 h-3 text-amber-700" />
+                        سهم مصوب سود سرمایه‌گذار
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={row.percentage}
+                      onChange={(e) => handleUpdateBudgetRowPercent(row.id, Number(e.target.value))}
+                      className="w-16 p-1 border border-slate-300 rounded-lg text-center font-mono font-bold text-xs bg-white focus:ring-2 focus:ring-amber-700 outline-hidden"
+                    />
+                    <span className="font-bold text-slate-600">٪</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveBudgetRow(row.id)}
+                      className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
+                      title="حذف ردیف"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          {!(formData.budgetRows || []).some((r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')) && (
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between bg-amber-50/60 p-3 rounded-2xl border border-amber-200">
+              <span className="text-xs text-amber-900">
+                ردیف «سهم سود مصوب سرمایه‌گذار» در لیست بودجه وجود ندارد.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const newRow: BudgetRowConfig = {
+                    id: `b-investor-${Date.now()}`,
+                    name: 'سهم سود مصوب سرمایه‌گذار',
+                    percentage: 35,
+                    isInvestorShare: true,
+                    description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه'
+                  };
+                  setFormData((prev) => ({
+                    ...prev,
+                    budgetRows: [...(prev.budgetRows || []), newRow],
+                    investorSharePercent: 35
+                  }));
+                }}
+                className="bg-amber-800 hover:bg-amber-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>افزودن ردیف سهم سرمایه‌گذار (۳۵٪)</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Measurement Units */}

@@ -10,6 +10,8 @@ import {
   WalletTransaction,
   Cheque,
   WagePayment,
+  Investor,
+  InvestorPayout,
 } from './types';
 import {
   fetchSettings,
@@ -40,6 +42,12 @@ import {
   fetchWagePayments,
   saveWagePayment,
   deleteWagePayment,
+  fetchInvestors,
+  saveInvestor,
+  deleteInvestor,
+  fetchInvestorPayouts,
+  saveInvestorPayout,
+  deleteInvestorPayout,
   DEFAULT_SETTINGS,
 } from './services/dbService';
 
@@ -53,6 +61,7 @@ import { PurchaseInvoicesListView } from './components/PurchaseInvoicesListView'
 import { GuestsListView } from './components/GuestsListView';
 import { ChequesListView } from './components/ChequesListView';
 import { WagesListView } from './components/WagesListView';
+import { InvestorPayoutsView } from './components/InvestorPayoutsView';
 import { BudgetAndInvestorView } from './components/BudgetAndInvestorView';
 import { ReportsView } from './components/ReportsView';
 import { InvoicePrintModal } from './components/InvoicePrintModal';
@@ -72,6 +81,8 @@ export default function App() {
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [wagePayments, setWagePayments] = useState<WagePayment[]>([]);
+  const [investors, setInvestors] = useState<Investor[]>([]);
+  const [investorPayouts, setInvestorPayouts] = useState<InvestorPayout[]>([]);
 
   // Edit / Print State
   const [editingSalesInvoice, setEditingSalesInvoice] = useState<SalesInvoice | null>(null);
@@ -83,7 +94,7 @@ export default function App() {
     async function loadData() {
       setLoading(true);
       try {
-        const [st, cats, its, sales, purchases, gst, wtxs, chq, wgs] = await Promise.all([
+        const [st, cats, its, sales, purchases, gst, wtxs, chq, wgs, invs, payouts] = await Promise.all([
           fetchSettings(),
           fetchCategories(),
           fetchItems(),
@@ -93,6 +104,8 @@ export default function App() {
           fetchWalletTransactions(),
           fetchCheques(),
           fetchWagePayments(),
+          fetchInvestors(),
+          fetchInvestorPayouts(),
         ]);
 
         setSettings(st);
@@ -104,6 +117,8 @@ export default function App() {
         setWalletTransactions(wtxs);
         setCheques(chq);
         setWagePayments(wgs);
+        setInvestors(invs);
+        setInvestorPayouts(payouts);
       } catch (err) {
         console.error('Error loading initial data:', err);
       } finally {
@@ -299,15 +314,54 @@ export default function App() {
   // Handlers for Wages / Payroll
   const handleSaveWagePayment = async (wage: Partial<WagePayment>): Promise<WagePayment> => {
     const saved = await saveWagePayment(wage);
+    setWagePayments((prev) => {
+      const idx = prev.findIndex((w) => w.id === saved.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      }
+      return [saved, ...prev];
+    });
     const updated = await fetchWagePayments();
-    setWagePayments(updated);
+    if (updated) setWagePayments(updated);
     return saved;
   };
 
   const handleDeleteWagePayment = async (id: string) => {
+    setWagePayments((prev) => prev.filter((w) => w.id !== id));
     await deleteWagePayment(id);
     const updated = await fetchWagePayments();
-    setWagePayments(updated);
+    if (updated) setWagePayments(updated);
+  };
+
+  // Handlers for Investors & Profit Payouts
+  const handleSaveInvestor = async (investor: Partial<Investor>): Promise<Investor> => {
+    const saved = await saveInvestor(investor);
+    const updated = await fetchInvestors();
+    setInvestors(updated);
+    return saved;
+  };
+
+  const handleDeleteInvestor = async (id: string) => {
+    setInvestors((prev) => prev.filter((i) => i.id !== id));
+    await deleteInvestor(id);
+    const updated = await fetchInvestors();
+    if (updated) setInvestors(updated);
+  };
+
+  const handleSaveInvestorPayout = async (payout: Partial<InvestorPayout>): Promise<InvestorPayout> => {
+    const saved = await saveInvestorPayout(payout);
+    const updated = await fetchInvestorPayouts();
+    setInvestorPayouts(updated);
+    return saved;
+  };
+
+  const handleDeleteInvestorPayout = async (id: string) => {
+    setInvestorPayouts((prev) => prev.filter((p) => p.id !== id));
+    await deleteInvestorPayout(id);
+    const updated = await fetchInvestorPayouts();
+    if (updated) setInvestorPayouts(updated);
   };
 
   if (loading) {
@@ -466,6 +520,22 @@ export default function App() {
             wagePayments={wagePayments}
             onSaveWagePayment={handleSaveWagePayment}
             onDeleteWagePayment={handleDeleteWagePayment}
+          />
+        )}
+
+        {/* 7.5. Investor Profit Payouts */}
+        {activeTab === 'investor_payouts' && (
+          <InvestorPayoutsView
+            investors={investors}
+            investorPayouts={investorPayouts}
+            settings={settings}
+            salesInvoices={salesInvoices}
+            purchaseInvoices={purchaseInvoices}
+            wagePayments={wagePayments}
+            onSaveInvestor={handleSaveInvestor}
+            onDeleteInvestor={handleDeleteInvestor}
+            onSaveInvestorPayout={handleSaveInvestorPayout}
+            onDeleteInvestorPayout={handleDeleteInvestorPayout}
           />
         )}
 

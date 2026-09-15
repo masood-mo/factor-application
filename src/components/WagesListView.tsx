@@ -8,10 +8,12 @@ import {
   CreditCard,
   Trash2,
   Edit2,
+  Edit3,
   X,
   Check,
   Award,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
 import { WagePayment } from '../types';
 import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
@@ -31,6 +33,8 @@ export function WagesListView({
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWage, setEditingWage] = useState<Partial<WagePayment>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const filteredWages = wagePayments.filter((w) => {
     const q = searchQuery.toLowerCase().trim();
@@ -61,11 +65,39 @@ export function WagesListView({
     setIsModalOpen(true);
   };
 
+  const handleOpenEditWage = (wage: WagePayment) => {
+    setEditingWage({ ...wage });
+    setIsModalOpen(true);
+  };
+
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingWage.employeeName || !editingWage.amount) return;
-    await onSaveWagePayment(editingWage);
-    setIsModalOpen(false);
+    try {
+      setIsSaving(true);
+      await onSaveWagePayment(editingWage);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error('Error saving wage:', err);
+      alert('خطا در ذخیره سند دستمزد. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (wage: WagePayment) => {
+    if (!confirm(`آیا از حذف سند دستمزد "${wage.employeeName}" به مبلغ ${formatPersianPrice(wage.amount)} تومان اطمینان دارید؟`)) {
+      return;
+    }
+    try {
+      setDeletingId(wage.id);
+      await onDeleteWagePayment(wage.id);
+    } catch (err) {
+      console.error('Error deleting wage:', err);
+      alert('خطا در حذف سند دستمزد');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -219,17 +251,27 @@ export function WagesListView({
                     </td>
 
                     <td className="py-3 px-3 text-center">
-                      <button
-                        onClick={() => {
-                          if (confirm(`آیا از حذف سند دستمزد ${w.employeeName} اطمینان دارید؟`)) {
-                            onDeleteWagePayment(w.id);
-                          }
-                        }}
-                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                        title="حذف سند"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleOpenEditWage(w)}
+                          className="p-1.5 text-slate-500 hover:text-amber-800 hover:bg-amber-100 rounded-lg transition-all cursor-pointer"
+                          title="ویرایش سند دستمزد"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(w)}
+                          disabled={deletingId === w.id}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                          title="حذف سند"
+                        >
+                          {deletingId === w.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -245,7 +287,9 @@ export function WagesListView({
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-amber-900/20 flex flex-col gap-5 text-right">
             
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-base font-bold text-slate-900">ثبت سند پرداخت دستمزد و حقوق پرسنل</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                {editingWage.id ? 'ویرایش سند پرداخت دستمزد و حقوق' : 'ثبت سند پرداخت دستمزد و حقوق پرسنل'}
+              </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
@@ -379,10 +423,15 @@ export function WagesListView({
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                  disabled={isSaving}
+                  className="flex items-center gap-2 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
                 >
-                  <Check className="w-4 h-4 text-amber-300" />
-                  <span>ذخیره سند دستمزد</span>
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                  ) : (
+                    <Check className="w-4 h-4 text-amber-300" />
+                  )}
+                  <span>{editingWage.id ? 'به‌روزرسانی سند دستمزد' : 'ذخیره سند دستمزد'}</span>
                 </button>
               </div>
             </form>

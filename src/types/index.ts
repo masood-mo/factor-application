@@ -4,6 +4,7 @@ export interface BudgetRowConfig {
   percentage: number; // e.g. 20 for 20%
   description?: string;
   categoryIds?: string[];
+  isInvestorShare?: boolean;
 }
 
 export interface LodgeSettings {
@@ -146,6 +147,33 @@ export interface WagePayment {
   createdAt: string;
 }
 
+export interface Investor {
+  id: string;
+  name: string; // نام و نام خانوادگی
+  sharePercent: number; // درصد سهم (مثلاً ۶۰٪ یا ۴۰٪)
+  phone?: string;
+  nationalCode?: string;
+  cardNumber?: string;
+  shaba?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface InvestorPayout {
+  id: string;
+  investorId: string;
+  investorName: string;
+  amount: number;
+  date: string; // YYYY/MM/DD
+  paymentMethod: 'CARD_TO_CARD' | 'BANK_TRANSFER' | 'CHEQUE' | 'CASH';
+  referenceNumber?: string;
+  period?: string; // e.g. 'سود فصل تابستان ۱۴۰۳'
+  notes?: string;
+  paid: boolean;
+  calculatedProfitShare?: number; // مبلغ محاسبه شده پیشنهادی
+  createdAt: string;
+}
+
 export interface SalesInvoice {
   id: string;
   serialNumber: string;
@@ -216,6 +244,7 @@ export type ActiveTab =
   | 'guests_list'
   | 'cheques_list'
   | 'wages_list'
+  | 'investor_payouts'
   | 'budget_investor'
   | 'reports' 
   | 'settings';

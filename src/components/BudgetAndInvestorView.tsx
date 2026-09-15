@@ -63,8 +63,15 @@ export function BudgetAndInvestorView({
   const [includeWagesInExpenses, setIncludeWagesInExpenses] = useState<boolean>(true);
 
   // Investor Share Settings
+  const investorBudgetRow = (settings.budgetRows || []).find(
+    (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
+  );
+  const defaultInvestorPercent = investorBudgetRow
+    ? Number(investorBudgetRow.percentage)
+    : (settings.investorSharePercent || 35);
+
   const [investorSharePercent, setInvestorSharePercent] = useState<number>(
-    settings.investorSharePercent || 35
+    defaultInvestorPercent
   );
   const [investorExemptCategoryIds, setInvestorExemptCategoryIds] = useState<string[]>(
     settings.investorExemptCategoryIds || ['cat-3']

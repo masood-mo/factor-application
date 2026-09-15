@@ -20,19 +20,21 @@ import {
   WalletTransaction,
   Cheque,
   WagePayment,
-  BudgetRowConfig
+  BudgetRowConfig,
+  Investor,
+  InvestorPayout
 } from '../types';
 import { getCurrentJalaliDate } from '../utils/persianDate';
 
 const SETTINGS_DOC = 'general';
 
 export const DEFAULT_BUDGET_ROWS: BudgetRowConfig[] = [
-  { id: 'b-1', name: 'مواد غذایی، صبحانه و پذیرایی', percentage: 30, description: 'خرید مواد خوراکی، دیزی، گوشت، برنج و صبحانه محلی' },
-  { id: 'b-2', name: 'حقوق، دستمزد و انعام پرسنل', percentage: 25, description: 'حقوق پرسنل آشپزخانه، پذیرش، نظافت و راهنمایان' },
-  { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 15, description: 'کاهگل‌کاری، تاسیسات، رنگ‌آمیزی و نوسازی اتاق‌ها' },
-  { id: 'b-4', name: 'انرژی، قبوض، اینترنت و شارژ', percentage: 10, description: 'قبوض آب، برق، گاز، اینترنت و ملزومات مصرفی' },
-  { id: 'b-5', name: 'تبلیغات، عکاسی و جذب گردشگر', percentage: 10, description: 'عکاسی حرفه‌ای، تبلیغات مجازی و سایت‌های رزرو' },
-  { id: 'b-6', name: 'ذخیره احتیاطی و توسعه اقامتگاه', percentage: 10, description: 'صندوق توسعه و هزینه‌های پیش‌بینی‌نشده' },
+  { id: 'b-1', name: 'مواد غذایی، صبحانه و پذیرایی', percentage: 25, description: 'خرید مواد خوراکی، دیزی، گوشت، برنج و صبحانه محلی' },
+  { id: 'b-2', name: 'حقوق، دستمزد و انعام پرسنل', percentage: 20, description: 'حقوق پرسنل آشپزخانه، پذیرش، نظافت و راهنمایان' },
+  { id: 'b-investor', name: 'سهم سود مصوب سرمایه‌گذار', percentage: 35, description: 'درصد مصوب سهم سرمایه‌گذار از سود خالص اقامتگاه', isInvestorShare: true },
+  { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 10, description: 'کاهگل‌کاری، تاسیسات، رنگ‌آمیزی و نوسازی اتاق‌ها' },
+  { id: 'b-4', name: 'انرژی، قبوض، اینترنت و شارژ', percentage: 5, description: 'قبوض آب، برق، گاز، اینترنت و ملزومات مصرفی' },
+  { id: 'b-5', name: 'تبلیغات، عکاسی و جذب گردشگر', percentage: 5, description: 'عکاسی حرفه‌ای، تبلیغات مجازی و سایت‌های رزرو' },
 ];
 
 export const DEFAULT_SETTINGS: LodgeSettings = {
@@ -103,6 +105,60 @@ export const DEFAULT_GUESTS: Guest[] = [
     walletBalance: 0,
     tags: ['عکاسی', 'تور گلاب‌گیری'],
     createdAt: '1403/03/15'
+  }
+];
+
+export const DEFAULT_INVESTORS: Investor[] = [
+  {
+    id: 'inv-1',
+    name: 'حاج محمدتقی برزکی',
+    sharePercent: 60,
+    phone: '09131612345',
+    cardNumber: '6037-9911-2233-4455',
+    shaba: 'IR120170000000112233445501',
+    notes: 'سرمایه‌گذار اصلی مرمت بنا و تجهیز سوئیت‌های سنتی اقامتگاه',
+    createdAt: '1402/01/01'
+  },
+  {
+    id: 'inv-2',
+    name: 'مهندس حمیدرضا ملائی',
+    sharePercent: 40,
+    phone: '09123456789',
+    cardNumber: '5022-2910-8877-6655',
+    shaba: 'IR880170000000887766550001',
+    notes: 'سرمایه‌گذار توسعه بوم‌گردی و تجارب محلی',
+    createdAt: '1402/01/01'
+  }
+];
+
+export const DEFAULT_INVESTOR_PAYOUTS: InvestorPayout[] = [
+  {
+    id: 'payout-1',
+    investorId: 'inv-1',
+    investorName: 'حاج محمدتقی برزکی',
+    amount: 18000000,
+    date: '1403/04/15',
+    paymentMethod: 'BANK_TRANSFER',
+    referenceNumber: 'TRX-894210',
+    period: 'سود سه ماهه بهار ۱۴۰۳',
+    notes: 'واریز سود مصوب به حساب شبا پس از کسر هزینه‌ها و اقلام معاف',
+    paid: true,
+    calculatedProfitShare: 18000000,
+    createdAt: '1403/04/15T10:00:00.000Z'
+  },
+  {
+    id: 'payout-2',
+    investorId: 'inv-2',
+    investorName: 'مهندس حمیدرضا ملائی',
+    amount: 12000000,
+    date: '1403/04/15',
+    paymentMethod: 'CARD_TO_CARD',
+    referenceNumber: 'TRX-894211',
+    period: 'سود سه ماهه بهار ۱۴۰۳',
+    notes: 'واریز علی‌الحساب سود سهم ۴۰ درصدی فصل بهار',
+    paid: true,
+    calculatedProfitShare: 12000000,
+    createdAt: '1403/04/15T10:15:00.000Z'
   }
 ];
 
@@ -540,15 +596,25 @@ export async function fetchWagePayments(): Promise<WagePayment[]> {
   const cached = getLocalCache<WagePayment[]>('wage_payments', []);
   try {
     const q = query(collection(db, 'wage_payments'), orderBy('date', 'desc'));
-    const snap = await getDocs(q);
-    const list: WagePayment[] = [];
-    snap.forEach((d) => list.push({ id: d.id, ...d.data() } as WagePayment));
-    if (list.length > 0) {
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap) {
+      const list: WagePayment[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as WagePayment));
       setLocalCache('wage_payments', list);
       return list;
     }
+    const d1Data = await fetchFromD1<WagePayment>('wages');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('wage_payments', d1Data);
+      return d1Data;
+    }
     return cached;
   } catch {
+    const d1Data = await fetchFromD1<WagePayment>('wages');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('wage_payments', d1Data);
+      return d1Data;
+    }
     return cached;
   }
 }
@@ -574,14 +640,12 @@ export async function saveWagePayment(wage: Partial<WagePayment>): Promise<WageP
   const list = getLocalCache<WagePayment[]>('wage_payments', []);
   const idx = list.findIndex(w => w.id === id);
   if (idx >= 0) list[idx] = wageObj;
-  else list.push(wageObj);
+  else list.unshift(wageObj);
   setLocalCache('wage_payments', list);
 
-  try {
-    await setDoc(doc(db, 'wage_payments', id), wageObj, { merge: true });
-  } catch {
-    // Offline mode
-  }
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'wage_payments', id), sanitizeForFirestore(wageObj), { merge: true });
+  });
   syncToD1('wages', wageObj);
   return wageObj;
 }
@@ -590,11 +654,134 @@ export async function deleteWagePayment(id: string): Promise<void> {
   const list = getLocalCache<WagePayment[]>('wage_payments', []).filter(w => w.id !== id);
   setLocalCache('wage_payments', list);
   syncToD1('wages', { id }, 'delete');
-  try {
+  safeFirestoreOp(async () => {
     await deleteDoc(doc(db, 'wage_payments', id));
+  });
+}
+
+// --- Investor Operations ---
+export async function fetchInvestors(): Promise<Investor[]> {
+  const cached = getLocalCache<Investor[]>('investors', DEFAULT_INVESTORS);
+  try {
+    const q = query(collection(db, 'investors'), orderBy('name', 'asc'));
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: Investor[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Investor));
+      if (list.length > 0) {
+        setLocalCache('investors', list);
+        return list;
+      }
+    }
+    const d1Data = await fetchFromD1<Investor>('investors');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('investors', d1Data);
+      return d1Data;
+    }
+    return cached;
   } catch {
-    // Offline mode
+    return cached;
   }
+}
+
+export async function saveInvestor(investor: Partial<Investor>): Promise<Investor> {
+  const id = investor.id || `inv-${Date.now()}`;
+  const invObj: Investor = {
+    id,
+    name: investor.name || '',
+    sharePercent: Number(investor.sharePercent) || 0,
+    phone: investor.phone || '',
+    nationalCode: investor.nationalCode || '',
+    cardNumber: investor.cardNumber || '',
+    shaba: investor.shaba || '',
+    notes: investor.notes || '',
+    createdAt: investor.createdAt || new Date().toISOString()
+  };
+
+  const list = getLocalCache<Investor[]>('investors', DEFAULT_INVESTORS);
+  const idx = list.findIndex(i => i.id === id);
+  if (idx >= 0) list[idx] = invObj;
+  else list.push(invObj);
+  setLocalCache('investors', list);
+
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'investors', id), sanitizeForFirestore(invObj), { merge: true });
+  });
+  syncToD1('investors', invObj);
+  return invObj;
+}
+
+export async function deleteInvestor(id: string): Promise<void> {
+  const list = getLocalCache<Investor[]>('investors', DEFAULT_INVESTORS).filter(i => i.id !== id);
+  setLocalCache('investors', list);
+  syncToD1('investors', { id }, 'delete');
+  safeFirestoreOp(async () => {
+    await deleteDoc(doc(db, 'investors', id));
+  });
+}
+
+// --- Investor Payouts Operations ---
+export async function fetchInvestorPayouts(): Promise<InvestorPayout[]> {
+  const cached = getLocalCache<InvestorPayout[]>('investor_payouts', DEFAULT_INVESTOR_PAYOUTS);
+  try {
+    const q = query(collection(db, 'investor_payouts'), orderBy('date', 'desc'));
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: InvestorPayout[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as InvestorPayout));
+      if (list.length > 0) {
+        setLocalCache('investor_payouts', list);
+        return list;
+      }
+    }
+    const d1Data = await fetchFromD1<InvestorPayout>('investor_payouts');
+    if (d1Data && d1Data.length > 0) {
+      setLocalCache('investor_payouts', d1Data);
+      return d1Data;
+    }
+    return cached;
+  } catch {
+    return cached;
+  }
+}
+
+export async function saveInvestorPayout(payout: Partial<InvestorPayout>): Promise<InvestorPayout> {
+  const id = payout.id || `payout-${Date.now()}`;
+  const payoutObj: InvestorPayout = {
+    id,
+    investorId: payout.investorId || '',
+    investorName: payout.investorName || '',
+    amount: Number(payout.amount) || 0,
+    date: payout.date || getCurrentJalaliDate(),
+    paymentMethod: payout.paymentMethod || 'BANK_TRANSFER',
+    referenceNumber: payout.referenceNumber || '',
+    period: payout.period || '',
+    notes: payout.notes || '',
+    paid: payout.paid ?? true,
+    calculatedProfitShare: payout.calculatedProfitShare ? Number(payout.calculatedProfitShare) : undefined,
+    createdAt: payout.createdAt || new Date().toISOString()
+  };
+
+  const list = getLocalCache<InvestorPayout[]>('investor_payouts', DEFAULT_INVESTOR_PAYOUTS);
+  const idx = list.findIndex(p => p.id === id);
+  if (idx >= 0) list[idx] = payoutObj;
+  else list.unshift(payoutObj);
+  setLocalCache('investor_payouts', list);
+
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'investor_payouts', id), sanitizeForFirestore(payoutObj), { merge: true });
+  });
+  syncToD1('investor_payouts', payoutObj);
+  return payoutObj;
+}
+
+export async function deleteInvestorPayout(id: string): Promise<void> {
+  const list = getLocalCache<InvestorPayout[]>('investor_payouts', DEFAULT_INVESTOR_PAYOUTS).filter(p => p.id !== id);
+  setLocalCache('investor_payouts', list);
+  syncToD1('investor_payouts', { id }, 'delete');
+  safeFirestoreOp(async () => {
+    await deleteDoc(doc(db, 'investor_payouts', id));
+  });
 }
 
 // --- Sales Invoice Operations ---

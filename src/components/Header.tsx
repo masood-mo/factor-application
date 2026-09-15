@@ -21,7 +21,8 @@ import {
   Sparkles,
   ArrowRight,
   TrendingUp,
-  FolderOpen
+  FolderOpen,
+  Award
 } from 'lucide-react';
 import { getChequeAlarmStatus, formatPersianDate, getCurrentJalaliDate } from '../utils/persianDate';
 
@@ -142,6 +143,12 @@ export const Header: React.FC<HeaderProps> = ({
           label: 'دستمزد و حقوق پرسنل',
           desc: 'ثبت پرداختی‌ها و تسویه کارکنان',
           icon: Banknote
+        },
+        {
+          id: 'investor_payouts' as ActiveTab,
+          label: 'پرداخت سود سرمایه‌گذار',
+          desc: 'معرفی سرمایه‌گذاران و ثبت پرداخت سود',
+          icon: Award
         }
       ]
     },
