@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { LodgeSettings, BudgetRowConfig } from '../types';
+import { LodgeSettings, BudgetRowConfig, Category } from '../types';
+import { DEFAULT_PURCHASE_CATEGORIES } from '../services/dbService';
 import {
   Building2,
   CreditCard,
@@ -18,46 +19,71 @@ import {
   UserCheck,
   Download,
   FolderArchive,
-  Award
+  Award,
+  Lock,
+  FolderTree
 } from 'lucide-react';
 
 interface SettingsViewProps {
   settings: LodgeSettings;
+  purchaseCategories?: Category[];
   onSaveSettings: (settings: LodgeSettings) => Promise<void>;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSettings }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ settings, purchaseCategories, onSaveSettings }) => {
   const initialBudgetRows = (() => {
-    let rows =
-      settings.budgetRows && settings.budgetRows.length > 0
-        ? [...settings.budgetRows]
-        : [
-            { id: 'b-1', name: 'مواد غذایی، پذیرایی و صبحانه', percentage: 25 },
-            { id: 'b-2', name: 'حقوق و دستمزد پرسنل', percentage: 20 },
-            {
-              id: 'b-investor',
-              name: 'سهم سود مصوب سرمایه‌گذار',
-              percentage: settings.investorSharePercent ?? 35,
-              description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه',
-              isInvestorShare: true
-            },
-            { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 10 },
-            { id: 'b-4', name: 'انرژی، اینترنت و قبوض', percentage: 5 },
-            { id: 'b-5', name: 'تبلیغات و توسعه گردشگری', percentage: 5 }
-          ];
-    const hasInvestor = rows.some((r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار'));
-    if (!hasInvestor) {
-      rows.push({
-        id: 'b-investor',
-        name: 'سهم سود مصوب سرمایه‌گذار',
-        percentage: settings.investorSharePercent ?? 35,
-        description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه',
-        isInvestorShare: true
-      });
-    } else {
-      rows = rows.map((r) => (r.name.includes('سرمایه‌گذار') ? { ...r, isInvestorShare: true } : r));
-    }
-    return rows;
+    const existing = settings.budgetRows || [];
+    const pCats = (purchaseCategories && purchaseCategories.length > 0)
+      ? purchaseCategories
+      : DEFAULT_PURCHASE_CATEGORIES;
+
+    // 1. Wage row
+    const existingWageRow = existing.find((r) => r.isWageRow || r.name.includes('حقوق') || r.name.includes('دستمزد'));
+    const wageRow: BudgetRowConfig = {
+      id: 'b-wages',
+      name: 'حقوق و دستمزد و انعام پرسنل',
+      percentage: existingWageRow ? Number(existingWageRow.percentage) : 20,
+      isWageRow: true,
+      isLocked: true,
+      description: 'هزینه‌های مربوط به حقوق، دستمزد و انعام پرسنل اقامتگاه'
+    };
+
+    // 2. Rows for each purchase category in the catalog
+    const categoryRows: BudgetRowConfig[] = pCats.map((cat) => {
+      const existingCatRow = existing.find(
+        (r) => (r.purchaseCategoryId && r.purchaseCategoryId === cat.id) || r.name.trim() === cat.name.trim()
+      );
+      let defaultPercent = 10;
+      if (cat.name.includes('غذایی') || cat.name.includes('بهداشتی')) defaultPercent = 25;
+      else if (cat.name.includes('قبض') || cat.name.includes('اینترنت')) defaultPercent = 5;
+      else if (cat.name.includes('تعمیر') || cat.name.includes('نگهداری')) defaultPercent = 10;
+      else if (cat.name.includes('تبلیغ') || cat.name.includes('محیط')) defaultPercent = 5;
+      else if (cat.name.includes('تجهیزات') || cat.name.includes('ملزومات')) defaultPercent = 5;
+
+      return {
+        id: `b-pcat-${cat.id}`,
+        name: cat.name,
+        purchaseCategoryId: cat.id,
+        percentage: existingCatRow ? Number(existingCatRow.percentage) : defaultPercent,
+        isLocked: true,
+        description: cat.description || `هزینه‌های فاکتورهای خرید دسته‌بندی ${cat.name}`
+      };
+    });
+
+    // 3. Investor Profit row
+    const existingInvestorRow = existing.find((r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار'));
+    const investorRow: BudgetRowConfig = {
+      id: 'b-investor',
+      name: 'سود سرمایه‌گذار',
+      percentage: existingInvestorRow
+        ? Number(existingInvestorRow.percentage)
+        : (settings.investorSharePercent ?? 35),
+      isInvestorShare: true,
+      isLocked: true,
+      description: 'سهم مصوب سود سرمایه‌گذار از سود اقامتگاه'
+    };
+
+    return [wageRow, ...categoryRows, investorRow];
   })();
 
   const [formData, setFormData] = useState<LodgeSettings>({
@@ -77,8 +103,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
   });
 
   const [newUnit, setNewUnit] = useState<string>('');
-  const [newBudgetRowName, setNewBudgetRowName] = useState<string>('');
-  const [newBudgetRowPercent, setNewBudgetRowPercent] = useState<number>(10);
   const [saving, setSaving] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
 
@@ -132,29 +156,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
     }));
   };
 
-  // Budget Row Management
-  const handleAddBudgetRow = () => {
-    if (!newBudgetRowName.trim()) return;
-    const newRow: BudgetRowConfig = {
-      id: `b-${Date.now()}`,
-      name: newBudgetRowName.trim(),
-      percentage: Number(newBudgetRowPercent) || 0
-    };
-    setFormData((prev) => ({
-      ...prev,
-      budgetRows: [...(prev.budgetRows || []), newRow]
-    }));
-    setNewBudgetRowName('');
-    setNewBudgetRowPercent(10);
-  };
-
-  const handleRemoveBudgetRow = (rowId: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      budgetRows: (prev.budgetRows || []).filter((r) => r.id !== rowId)
-    }));
-  };
-
+  // Budget Row Management - update percentage
   const handleUpdateBudgetRowPercent = (rowId: string, percent: number) => {
     setFormData((prev) => {
       const updatedRows = (prev.budgetRows || []).map((r) =>
@@ -583,119 +585,98 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSaveSett
           </div>
         </div>
 
-        {/* Section 4: Budget Rows Configuration */}
+        {/* Section 4: Budget Rows Configuration (Requirement 7) */}
         <div className="bg-white rounded-3xl p-6 border border-amber-900/15 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
-              <PieChart className="w-4 h-4 text-amber-800" />
-              تعریف ردیف‌های بودجه و درصد مصوب
-            </h3>
-            <span className={`text-xs font-bold font-mono px-2.5 py-1 rounded-xl ${
-              totalBudgetPercent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-            }`}>
-              مجموع درصدها: {totalBudgetPercent}٪
-            </span>
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="عنوان ردیف بودجه جدید (مثال: توسعه فضای سبز و باغ)"
-              value={newBudgetRowName}
-              onChange={(e) => setNewBudgetRowName(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-700 outline-hidden"
-            />
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                placeholder="درصد"
-                value={newBudgetRowPercent}
-                onChange={(e) => setNewBudgetRowPercent(Number(e.target.value))}
-                className="w-20 px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono text-center focus:ring-2 focus:ring-amber-700 outline-hidden"
-              />
-              <span className="text-xs text-slate-500 font-bold">٪</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-bold text-amber-950 flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-amber-800" />
+                تعریف ردیف‌های بودجه و درصد مصوب
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                شامل حقوق و دستمزد، ردیف‌های دسته‌بندی کاتالوگ خرید و سود سرمایه‌گذار (غیرقابل حذف یا تغییر عنوان)
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={handleAddBudgetRow}
-              className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>افزودن</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-bold font-mono px-3 py-1.5 rounded-xl border ${
+                totalBudgetPercent === 100
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-amber-50 text-amber-800 border-amber-200'
+              }`}>
+                مجموع درصدها: {totalBudgetPercent}٪ {totalBudgetPercent === 100 ? '✓' : ''}
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          {/* Locked Explanation Notice */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 flex items-start gap-3">
+            <Lock className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-slate-600 leading-relaxed">
+              ردیف‌های این جدول به صورت خودکار و یکپارچه از <strong>حقوق و دستمزد پرسنل</strong>، <strong>دسته‌بندی‌های کاتالوگ کالا و خدمات خرید</strong> و <strong>سود سرمایه‌گذار</strong> تشکیل شده‌اند و امکان تغییر عنوان یا حذف آن‌ها وجود ندارد. شما می‌توانید <strong>درصد مصوب هر ردیف</strong> را در کادرهای زیر تنظیم نمایید. برای افزودن ردیف هزینه جدید، کافیست دسته‌بندی مربوطه را در «کاتالوگ کالا و خدمات خرید» اضافه کنید.
+            </p>
+          </div>
+
+          {/* Budget Rows Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
             {(formData.budgetRows || []).map((row) => {
               const isInvestorRow = row.isInvestorShare || row.name.includes('سرمایه‌گذار');
+              const isWage = row.isWageRow || row.name.includes('حقوق') || row.name.includes('دستمزد');
+
               return (
                 <div
                   key={row.id}
-                  className={`flex items-center justify-between p-3 rounded-2xl border text-xs transition-all ${
+                  className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs transition-all ${
                     isInvestorRow
-                      ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300/60 shadow-xs'
-                      : 'bg-slate-50 border-slate-200'
+                      ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-300/50 shadow-2xs'
+                      : isWage
+                      ? 'bg-blue-50/60 border-blue-200 shadow-2xs'
+                      : 'bg-emerald-50/40 border-emerald-200/80 shadow-2xs'
                   }`}
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-bold text-slate-800">{row.name}</span>
-                    {isInvestorRow && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-200/70 px-1.5 py-0.5 rounded-md w-fit border border-amber-300">
-                        <Award className="w-3 h-3 text-amber-700" />
-                        سهم مصوب سود سرمایه‌گذار
+                  <div className="flex flex-col gap-1 min-w-0 pr-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-slate-900 text-xs truncate">{row.name}</span>
+                      <span className="text-slate-400" title="ردیف سیستمی قفل شده">
+                        <Lock className="w-3 h-3 text-slate-400" />
                       </span>
-                    )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {isInvestorRow ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-900 bg-amber-200/80 px-2 py-0.5 rounded-md border border-amber-300">
+                          <Award className="w-3 h-3 text-amber-700" />
+                          سود سرمایه‌گذار
+                        </span>
+                      ) : isWage ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200">
+                          حقوق و دستمزد پرسنل
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200">
+                          <FolderTree className="w-3 h-3 text-emerald-700" />
+                          دسته‌بندی کاتالوگ خرید
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-semibold">درصد مصوب:</span>
                     <input
                       type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
                       value={row.percentage}
                       onChange={(e) => handleUpdateBudgetRowPercent(row.id, Number(e.target.value))}
-                      className="w-16 p-1 border border-slate-300 rounded-lg text-center font-mono font-bold text-xs bg-white focus:ring-2 focus:ring-amber-700 outline-hidden"
+                      className="w-16 p-1.5 border border-slate-300 rounded-xl text-center font-mono font-black text-xs bg-white focus:ring-2 focus:ring-amber-700 outline-hidden shadow-2xs"
                     />
-                    <span className="font-bold text-slate-600">٪</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveBudgetRow(row.id)}
-                      className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer transition-colors"
-                      title="حذف ردیف"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <span className="font-bold text-slate-700 text-xs">٪</span>
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {!(formData.budgetRows || []).some((r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')) && (
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between bg-amber-50/60 p-3 rounded-2xl border border-amber-200">
-              <span className="text-xs text-amber-900">
-                ردیف «سهم سود مصوب سرمایه‌گذار» در لیست بودجه وجود ندارد.
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const newRow: BudgetRowConfig = {
-                    id: `b-investor-${Date.now()}`,
-                    name: 'سهم سود مصوب سرمایه‌گذار',
-                    percentage: 35,
-                    isInvestorShare: true,
-                    description: 'درصد مصوب سهم سرمایه‌گذار از سود اقامتگاه'
-                  };
-                  setFormData((prev) => ({
-                    ...prev,
-                    budgetRows: [...(prev.budgetRows || []), newRow],
-                    investorSharePercent: 35
-                  }));
-                }}
-                className="bg-amber-800 hover:bg-amber-900 text-white px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>افزودن ردیف سهم سرمایه‌گذار (۳۵٪)</span>
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Measurement Units */}

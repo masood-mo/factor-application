@@ -4,7 +4,10 @@ export interface BudgetRowConfig {
   percentage: number; // e.g. 20 for 20%
   description?: string;
   categoryIds?: string[];
+  purchaseCategoryId?: string;
+  isWageRow?: boolean;
   isInvestorShare?: boolean;
+  isLocked?: boolean;
 }
 
 export interface LodgeSettings {
@@ -34,6 +37,7 @@ export interface Category {
   id: string;
   name: string;
   description?: string;
+  type?: 'SALES' | 'PURCHASE';
   createdAt?: string;
 }
 
@@ -44,6 +48,7 @@ export interface Item {
   name: string;
   unit: string;
   basePrice: number;
+  type?: 'SALES' | 'PURCHASE';
   createdAt?: string;
 }
 
@@ -241,6 +246,7 @@ export type ActiveTab =
   | 'new_purchase_invoice' 
   | 'purchase_invoices_list' 
   | 'items_catalog' 
+  | 'purchase_items_catalog'
   | 'guests_list'
   | 'cheques_list'
   | 'wages_list'

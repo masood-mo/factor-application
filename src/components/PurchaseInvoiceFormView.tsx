@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item } from '../types';
+import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item, Category } from '../types';
 import { getCurrentJalaliDate } from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
 import { formatPersianPrice } from '../utils/numberToWords';
@@ -8,6 +8,7 @@ import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store,
 interface PurchaseInvoiceFormViewProps {
   settings: LodgeSettings;
   existingItems?: Item[];
+  categories?: Category[];
   invoiceToEdit?: PurchaseInvoice | null;
   onSaveInvoice: (invoice: Partial<PurchaseInvoice>) => Promise<PurchaseInvoice>;
   onCancelEdit?: () => void;
@@ -16,6 +17,7 @@ interface PurchaseInvoiceFormViewProps {
 export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = ({
   settings,
   existingItems = [],
+  categories = [],
   invoiceToEdit,
   onSaveInvoice,
   onCancelEdit,
@@ -284,7 +286,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                             value={row.itemId || ''}
                             className="w-full p-1 bg-emerald-50/70 border border-emerald-200 rounded-lg text-[11px] font-semibold text-emerald-950 focus:ring-1 focus:ring-emerald-700 outline-hidden"
                           >
-                            <option value="">-- انتخاب از لیست کالاهای تعریف شده --</option>
+                            <option value="">-- انتخاب از کاتالوگ خرید اقامتگاه --</option>
                             {existingItems.map((catIt) => (
                               <option key={catIt.id} value={catIt.id}>
                                 {catIt.name} ({catIt.categoryName}) - واحد: {catIt.unit}
@@ -300,6 +302,27 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                           required
                           className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden"
                         />
+                        {categories.length > 0 && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-[10px] text-slate-400">دسته هزینه:</span>
+                            <select
+                              value={row.categoryId || ''}
+                              onChange={(e) => {
+                                const selCat = categories.find((c) => c.id === e.target.value);
+                                handleItemChange(idx, 'categoryId', e.target.value);
+                                handleItemChange(idx, 'categoryName', selCat?.name || '');
+                              }}
+                              className="text-[10px] font-bold text-emerald-800 bg-emerald-50/60 border border-emerald-200 rounded px-1 py-0.5 outline-hidden"
+                            >
+                              <option value="">(انتخاب دسته‌بندی هزینه)</option>
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     </td>
 

@@ -4,6 +4,8 @@ import { formatPersianPrice } from '../utils/numberToWords';
 import { FolderPlus, PackagePlus, Search, Edit3, Trash2, Folder, Tag, Plus, Check, X, Filter, RefreshCw, Loader2 } from 'lucide-react';
 
 interface ItemsCatalogViewProps {
+  catalogType?: 'SALES' | 'PURCHASE';
+  onSwitchCatalogType?: (type: 'SALES' | 'PURCHASE') => void;
   categories: Category[];
   items: Item[];
   settings: LodgeSettings;
@@ -15,6 +17,8 @@ interface ItemsCatalogViewProps {
 }
 
 export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
+  catalogType = 'SALES',
+  onSwitchCatalogType,
   categories,
   items,
   settings,
@@ -24,6 +28,7 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
   onDeleteItem,
   onRefresh,
 }) => {
+  const isPurchase = catalogType === 'PURCHASE';
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -147,15 +152,54 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6">
+      {/* Catalog Mode Selector Tabs */}
+      {onSwitchCatalogType && (
+        <div className="flex items-center gap-2 mb-5 p-1.5 bg-slate-200/80 rounded-2xl w-fit border border-slate-300">
+          <button
+            type="button"
+            onClick={() => onSwitchCatalogType('SALES')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              !isPurchase
+                ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-300'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Tag className="w-4 h-4 text-amber-600" />
+            <span>کاتالوگ کالا و خدمات فروش (درآمدها)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSwitchCatalogType('PURCHASE')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              isPurchase
+                ? 'bg-white text-emerald-950 shadow-xs ring-1 ring-emerald-300'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Folder className="w-4 h-4 text-emerald-600" />
+            <span>کاتالوگ کالا و خدمات خرید (هزینه‌ها و بودجه)</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <Tag className="w-6 h-6 text-amber-600" />
-            تعریف و مدیریت کالاها و خدمات
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+              <Tag className={`w-6 h-6 ${isPurchase ? 'text-emerald-600' : 'text-amber-600'}`} />
+              {isPurchase ? 'کاتالوگ کالا و خدمات خرید (هزینه‌ها)' : 'کاتالوگ کالا و خدمات فروش (درآمدها)'}
+            </h2>
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+              isPurchase ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+            }`}>
+              {isPurchase ? 'مربوط به فاکتورهای خرید و ردیف‌های بودجه' : 'مربوط به فاکتورهای فروش و پذیرایی'}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-1">
-            دسته بندی خدمات اقامتی، رستوران، صنایع دستی و تورها برای صدور فاکتور و گزارش‌گیری
+            {isPurchase
+              ? 'دسته‌بندی هزینه‌ها (مواد غذایی و بهداشتی، قبض و اینترنت، تعمیرات و نگهداری، تبلیغات و محیط زیست) و اقلام مصرفی'
+              : 'دسته‌بندی خدمات اقامتی، رستوران، صنایع دستی و تورها برای صدور فاکتور فروش اقامتگاه'}
           </p>
         </div>
 
@@ -165,7 +209,7 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
               onClick={handleManualRefresh}
               disabled={isRefreshing}
               className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-3 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-50"
-              title="به‌روزرسانی لیست کالاها"
+              title="به‌روزرسانی لیست"
             >
               <RefreshCw className={`w-4 h-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">به‌روزرسانی</span>
@@ -176,16 +220,18 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
             onClick={() => handleOpenCategoryModal()}
             className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
           >
-            <FolderPlus className="w-4 h-4 text-amber-400" />
-            <span>ایجاد دسته جدید</span>
+            <FolderPlus className={`w-4 h-4 ${isPurchase ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span>{isPurchase ? 'ایجاد دسته خرید جدید' : 'ایجاد دسته فروش جدید'}</span>
           </button>
 
           <button
             onClick={() => handleOpenItemModal()}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+            className={`flex items-center gap-1.5 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer ${
+              isPurchase ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-indigo-600 hover:bg-indigo-700'
+            }`}
           >
             <PackagePlus className="w-4 h-4" />
-            <span>تعریف کالا/خدمت جدید</span>
+            <span>{isPurchase ? 'تعریف کالای خرید جدید' : 'تعریف کالا/خدمت جدید'}</span>
           </button>
         </div>
       </div>
@@ -298,18 +344,20 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
                 <thead className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-bold uppercase">
                   <tr>
                     <th className="px-4 py-3">#</th>
-                    <th className="px-4 py-3">نام کالا / خدمت</th>
-                    <th className="px-4 py-3">دسته مربوطه</th>
+                    <th className="px-4 py-3">{isPurchase ? 'نام کالای خرید' : 'نام کالا / خدمت'}</th>
+                    <th className="px-4 py-3">{isPurchase ? 'دسته‌بندی هزینه' : 'دسته مربوطه'}</th>
                     <th className="px-4 py-3">واحد اندازه‌گیری</th>
-                    <th className="px-4 py-3">قیمت پایه (تومان)</th>
+                    <th className="px-4 py-3">{isPurchase ? 'برآورد قیمت خرید (تومان)' : 'قیمت پایه فروش (تومان)'}</th>
                     <th className="px-4 py-3 text-center">عملیات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-slate-400">
-                        هیچ کالا یا خدمتی با مشخصات وارد شده یافت نشد.
+                      <td colSpan={6} className="text-center py-10 text-slate-400">
+                        {isPurchase
+                          ? 'هیچ کالایی در کاتالوگ خرید ثبت نشده است. می‌توانید با دکمه «تعریف کالای خرید جدید» اولین قلم هزینه اقامتگاه را تعریف فرمایید.'
+                          : 'هیچ کالا یا خدمتی با مشخصات وارد شده یافت نشد.'}
                       </td>
                     </tr>
                   ) : (
@@ -360,8 +408,10 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl border border-slate-200 animate-fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <FolderPlus className="w-4 h-4 text-amber-700" />
-                {editingCategory.id ? 'ویرایش دسته بندی' : 'افزودن دسته‌بندی جدید'}
+                <FolderPlus className={`w-4 h-4 ${isPurchase ? 'text-emerald-700' : 'text-amber-700'}`} />
+                {editingCategory.id
+                  ? (isPurchase ? 'ویرایش دسته خرید' : 'ویرایش دسته فروش')
+                  : (isPurchase ? 'افزودن دسته‌بندی خرید جدید' : 'افزودن دسته‌بندی فروش جدید')}
               </h3>
               <button
                 onClick={() => setCategoryModalOpen(false)}
@@ -426,8 +476,10 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-xl border border-slate-200 animate-fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                <PackagePlus className="w-4 h-4 text-amber-700" />
-                {editingItem.id ? 'ویرایش کالا / خدمت' : 'افزودن کالا یا خدمت جدید'}
+                <PackagePlus className={`w-4 h-4 ${isPurchase ? 'text-emerald-700' : 'text-amber-700'}`} />
+                {editingItem.id
+                  ? (isPurchase ? 'ویرایش کالای خرید' : 'ویرایش کالا / خدمت')
+                  : (isPurchase ? 'افزودن کالای خرید جدید' : 'افزودن کالا یا خدمت جدید')}
               </h3>
               <button
                 onClick={() => setItemModalOpen(false)}
@@ -440,7 +492,7 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
             <form onSubmit={handleSaveItemSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  انتخاب دسته مربوطه <span className="text-rose-500">*</span>
+                  {isPurchase ? 'انتخاب دسته‌بندی هزینه' : 'انتخاب دسته مربوطه'} <span className="text-rose-500">*</span>
                 </label>
                 <select
                   required
@@ -465,14 +517,18 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  نام کالا یا خدمت <span className="text-rose-500">*</span>
+                  {isPurchase ? 'نام کالای خرید' : 'نام کالا یا خدمت'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={editingItem.name || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                  placeholder="مثال: دیزی سنگی محلی، اقامت اتاق شاه‌نشین..."
+                  placeholder={
+                    isPurchase
+                      ? 'مثال: گوشت و پروتئین، برنج طارم، شوینده، آبگرمکن...'
+                      : 'مثال: دیزی سنگی محلی، اقامت اتاق شاه‌نشین...'
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                 />
               </div>
@@ -497,7 +553,7 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    قیمت پایه فروش (تومان) <span className="text-rose-500">*</span>
+                    {isPurchase ? 'برآورد قیمت خرید (تومان)' : 'قیمت پایه فروش (تومان)'} <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="number"
@@ -528,7 +584,9 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-1.5 bg-amber-700 hover:bg-amber-800 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-xs"
+                  className={`flex items-center gap-1.5 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-xs ${
+                    isPurchase ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-amber-700 hover:bg-amber-800'
+                  }`}
                 >
                   <Check className="w-4 h-4" />
                   ذخیره کالا

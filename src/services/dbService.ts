@@ -29,13 +29,65 @@ import { getCurrentJalaliDate } from '../utils/persianDate';
 const SETTINGS_DOC = 'general';
 
 export const DEFAULT_BUDGET_ROWS: BudgetRowConfig[] = [
-  { id: 'b-1', name: 'مواد غذایی، صبحانه و پذیرایی', percentage: 25, description: 'خرید مواد خوراکی، دیزی، گوشت، برنج و صبحانه محلی' },
-  { id: 'b-2', name: 'حقوق، دستمزد و انعام پرسنل', percentage: 20, description: 'حقوق پرسنل آشپزخانه، پذیرش، نظافت و راهنمایان' },
-  { id: 'b-investor', name: 'سهم سود مصوب سرمایه‌گذار', percentage: 35, description: 'درصد مصوب سهم سرمایه‌گذار از سود خالص اقامتگاه', isInvestorShare: true },
-  { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 10, description: 'کاهگل‌کاری، تاسیسات، رنگ‌آمیزی و نوسازی اتاق‌ها' },
-  { id: 'b-4', name: 'انرژی، قبوض، اینترنت و شارژ', percentage: 5, description: 'قبوض آب، برق، گاز، اینترنت و ملزومات مصرفی' },
-  { id: 'b-5', name: 'تبلیغات، عکاسی و جذب گردشگر', percentage: 5, description: 'عکاسی حرفه‌ای، تبلیغات مجازی و سایت‌های رزرو' },
+  {
+    id: 'b-wages',
+    name: 'حقوق و دستمزد و انعام پرسنل',
+    percentage: 20,
+    description: 'حقوق و دستمزد پرسنل اقامتگاه، آشپزخانه و خدمات',
+    isWageRow: true,
+    isLocked: true,
+  },
+  {
+    id: 'b-pcat-1',
+    name: 'مواد غذایی و بهداشتی',
+    percentage: 25,
+    description: 'هزینه خرید مواد خوراکی، دیزی، گوشت، برنج، شوینده‌ها و ملزومات بهداشتی',
+    purchaseCategoryId: 'pcat-1',
+    isLocked: true,
+  },
+  {
+    id: 'b-pcat-2',
+    name: 'قبض و اینترنت',
+    percentage: 5,
+    description: 'قبوض آب، برق، گاز، اشتراک اینترنت و تلفن اقامتگاه',
+    purchaseCategoryId: 'pcat-2',
+    isLocked: true,
+  },
+  {
+    id: 'b-pcat-3',
+    name: 'تعمیرات و نگهداری',
+    percentage: 10,
+    description: 'کاهگل‌کاری، تاسیسات، رنگ‌آمیزی و مرمت سنتی بنا',
+    purchaseCategoryId: 'pcat-3',
+    isLocked: true,
+  },
+  {
+    id: 'b-pcat-4',
+    name: 'تبلیغات و محیط زیست',
+    percentage: 5,
+    description: 'تبلیغات مجازی، عکاسی، تفکیک زباله و حفاظت از محیط زیست',
+    purchaseCategoryId: 'pcat-4',
+    isLocked: true,
+  },
+  {
+    id: 'b-investor',
+    name: 'سود سرمایه‌گذار',
+    percentage: 35,
+    description: 'سهم سود مصوب سرمایه‌گذار از سود عملیاتی اقامتگاه',
+    isInvestorShare: true,
+    isLocked: true,
+  },
 ];
+
+export const DEFAULT_PURCHASE_CATEGORIES: Category[] = [
+  { id: 'pcat-1', name: 'مواد غذایی و بهداشتی', description: 'مواد خوراکی، گوشت، برنج، لبنیات، شوینده‌ها و اقلام بهداشتی', type: 'PURCHASE' },
+  { id: 'pcat-2', name: 'قبض و اینترنت', description: 'قبوض آب، برق، گاز، اشتراک اینترنت و تلفن اقامتگاه', type: 'PURCHASE' },
+  { id: 'pcat-3', name: 'تعمیرات و نگهداری', description: 'تعمیرات تاسیسات، رنگ‌آمیزی، بهسازی اتاق‌ها و مرمت بنا', type: 'PURCHASE' },
+  { id: 'pcat-4', name: 'تبلیغات و محیط زیست', description: 'تبلیغات، تولید محتوا، تفکیک پسماند و محیط زیست بوم‌گردی', type: 'PURCHASE' },
+  { id: 'pcat-5', name: 'تجهیزات و ملزومات مصرفی', description: 'ظروف، ملحفه، منسوجات و تجهیزات مصرفی اقامتگاه', type: 'PURCHASE' },
+];
+
+export const DEFAULT_PURCHASE_ITEMS: Item[] = [];
 
 export const DEFAULT_SETTINGS: LodgeSettings = {
   lodgeName: 'اقامتگاه بوم‌گردی خانه برزک',
@@ -373,6 +425,115 @@ export async function deleteItem(id: string): Promise<void> {
   syncToD1('items', { id }, 'delete');
   try {
     await deleteDoc(doc(db, 'items', id));
+  } catch {
+    // Offline mode
+  }
+}
+
+// --- Purchase Category Operations ---
+export async function fetchPurchaseCategories(): Promise<Category[]> {
+  const cached = getLocalCache<Category[]>('purchase_categories', DEFAULT_PURCHASE_CATEGORIES);
+  try {
+    const q = query(collection(db, 'purchase_categories'), orderBy('name', 'asc'));
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: Category[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Category));
+      if (list.length > 0) {
+        setLocalCache('purchase_categories', list);
+        return list;
+      }
+    }
+    return cached;
+  } catch {
+    return cached;
+  }
+}
+
+export async function savePurchaseCategory(category: Partial<Category>): Promise<Category> {
+  const id = category.id || `pcat-${Date.now()}`;
+  const catObj: Category = {
+    id,
+    name: category.name || 'دسته جدید خرید',
+    description: category.description || '',
+    type: 'PURCHASE',
+    createdAt: category.createdAt || new Date().toISOString(),
+  };
+  const list = getLocalCache<Category[]>('purchase_categories', DEFAULT_PURCHASE_CATEGORIES);
+  const idx = list.findIndex((c) => c.id === id);
+  if (idx >= 0) list[idx] = catObj;
+  else list.push(catObj);
+  setLocalCache('purchase_categories', list);
+
+  try {
+    await setDoc(doc(db, 'purchase_categories', id), catObj, { merge: true });
+  } catch {
+    // Offline mode
+  }
+  return catObj;
+}
+
+export async function deletePurchaseCategory(id: string): Promise<void> {
+  const list = getLocalCache<Category[]>('purchase_categories', DEFAULT_PURCHASE_CATEGORIES).filter((c) => c.id !== id);
+  setLocalCache('purchase_categories', list);
+  try {
+    await deleteDoc(doc(db, 'purchase_categories', id));
+  } catch {
+    // Offline mode
+  }
+}
+
+// --- Purchase Item Operations ---
+export async function fetchPurchaseItems(): Promise<Item[]> {
+  const cached = getLocalCache<Item[]>('purchase_items', DEFAULT_PURCHASE_ITEMS);
+  try {
+    const q = query(collection(db, 'purchase_items'), orderBy('name', 'asc'));
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: Item[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as Item));
+      if (list.length > 0) {
+        setLocalCache('purchase_items', list);
+        return [...list];
+      }
+    }
+    return [...cached];
+  } catch {
+    return [...cached];
+  }
+}
+
+export async function savePurchaseItem(item: Partial<Item>): Promise<Item> {
+  const id = item.id || `pitem-${Date.now()}`;
+  const itemObj: Item = {
+    id,
+    categoryId: item.categoryId || '',
+    categoryName: item.categoryName || 'سایر هزینه‌ها',
+    name: item.name || '',
+    unit: item.unit || 'عدد',
+    basePrice: Number(item.basePrice) || 0,
+    type: 'PURCHASE',
+    createdAt: item.createdAt || new Date().toISOString(),
+  };
+  const list = getLocalCache<Item[]>('purchase_items', DEFAULT_PURCHASE_ITEMS);
+  const idx = list.findIndex((i) => i.id === id);
+  if (idx >= 0) list[idx] = itemObj;
+  else list.push(itemObj);
+  setLocalCache('purchase_items', list);
+
+  try {
+    await setDoc(doc(db, 'purchase_items', id), itemObj, { merge: true });
+  } catch {
+    // Offline mode
+  }
+  return itemObj;
+}
+
+export async function deletePurchaseItem(id: string): Promise<void> {
+  const list = getLocalCache<Item[]>('purchase_items', DEFAULT_PURCHASE_ITEMS).filter((i) => i.id !== id);
+  setLocalCache('purchase_items', list);
+  try {
+    await deleteDoc(doc(db, 'purchase_items', id));
   } catch {
     // Offline mode
   }

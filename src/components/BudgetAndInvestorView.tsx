@@ -21,9 +21,13 @@ import {
   PurchaseInvoice,
   WagePayment,
   Category,
+  Item,
   LodgeSettings,
-  BudgetRowConfig
+  BudgetRowConfig,
+  Investor,
+  InvestorPayout
 } from '../types';
+import { DEFAULT_PURCHASE_CATEGORIES } from '../services/dbService';
 import {
   formatPersianPrice,
   getCurrentJalaliDate,
@@ -38,6 +42,10 @@ interface BudgetAndInvestorViewProps {
   purchaseInvoices: PurchaseInvoice[];
   wagePayments: WagePayment[];
   categories: Category[];
+  purchaseCategories?: Category[];
+  purchaseItems?: Item[];
+  investorPayouts?: InvestorPayout[];
+  investors?: Investor[];
   settings: LodgeSettings;
 }
 
@@ -46,6 +54,10 @@ export function BudgetAndInvestorView({
   purchaseInvoices,
   wagePayments,
   categories,
+  purchaseCategories = [],
+  purchaseItems = [],
+  investorPayouts = [],
+  investors = [],
   settings
 }: BudgetAndInvestorViewProps) {
   // Date Range State
@@ -138,41 +150,157 @@ export function BudgetAndInvestorView({
   const totalInScopeExpenses = totalInScopePurchases + totalInScopeWages;
   const netOperatingSurplus = totalInScopeSalesRevenue - totalInScopeExpenses;
 
-  // --- Budget Rows Calculation ---
-  const budgetRows: BudgetRowConfig[] = settings.budgetRows && settings.budgetRows.length > 0
-    ? settings.budgetRows
-    : [
-        { id: 'b-1', name: 'مواد غذایی، پذیرایی و صبحانه', percentage: 30 },
-        { id: 'b-2', name: 'حقوق و دستمزد پرسنل', percentage: 25 },
-        { id: 'b-3', name: 'تعمیرات، بهسازی و نگهداری بنا', percentage: 15 },
-        { id: 'b-4', name: 'انرژی، اینترنت و قبوض', percentage: 10 },
-        { id: 'b-5', name: 'تبلیغات و توسعه گردشگری', percentage: 10 },
-        { id: 'b-6', name: 'صندوق ذخیره احتیاطی', percentage: 10 }
-      ];
+  // --- Budget Rows Calculation (Requirements 5 & 6) ---
+  const effectivePurchaseCategories =
+    purchaseCategories && purchaseCategories.length > 0
+      ? purchaseCategories
+      : DEFAULT_PURCHASE_CATEGORIES;
 
-  // Map expenses to budget rows
-  const budgetRowsWithCalculations = budgetRows.map((row) => {
-    const allocatedBudget = (totalInScopeSalesRevenue * row.percentage) / 100;
-    
-    // Estimate actual spending mapped to this row
-    let actualSpent = 0;
-    if (row.name.includes('حقوق') || row.name.includes('دستمزد')) {
-      actualSpent = totalInScopeWages;
-    } else if (row.name.includes('غذا') || row.name.includes('پذیرایی')) {
-      actualSpent = totalInScopePurchases * 0.45;
-    } else if (row.name.includes('تعمیر') || row.name.includes('نگهداری')) {
-      actualSpent = totalInScopePurchases * 0.25;
-    } else if (row.name.includes('انرژی') || row.name.includes('قبوض')) {
-      actualSpent = totalInScopePurchases * 0.15;
-    } else {
-      actualSpent = totalInScopePurchases * (row.percentage / 100);
-    }
+  // In-range investor payouts
+  const inRangeInvestorPayouts = investorPayouts.filter((p) =>
+    isDateInRange(p.date, startDate, endDate)
+  );
+  const totalInvestorPayoutsPaid = inRangeInvestorPayouts.reduce(
+    (sum, p) => sum + (Number(p.amount) || 0),
+    0
+  );
 
-    const variance = allocatedBudget - actualSpent; // positive = under budget (saved), negative = over budget
+  // Helper to calculate actual spent per purchase category from purchase invoices
+  const matchedPurchaseItemIds = new Set<string>();
+  const categorySpentMap: Record<string, number> = {};
+  effectivePurchaseCategories.forEach((cat) => {
+    categorySpentMap[cat.id] = 0;
+  });
+
+  inRangePurchases.forEach((inv) => {
+    (inv.items || []).forEach((item) => {
+      const amount = Number(item.paidAmount || item.totalPrice) || 0;
+      let matchedCatId: string | null = null;
+
+      // 1. Check direct categoryId match
+      if (item.categoryId && categorySpentMap[item.categoryId] !== undefined) {
+        matchedCatId = item.categoryId;
+      }
+      // 2. Check catalog item match
+      if (!matchedCatId && item.itemId) {
+        const pItem = purchaseItems.find((p) => p.id === item.itemId);
+        if (pItem?.categoryId && categorySpentMap[pItem.categoryId] !== undefined) {
+          matchedCatId = pItem.categoryId;
+        }
+      }
+      // 3. Check direct categoryName match
+      if (!matchedCatId && item.categoryName) {
+        const found = effectivePurchaseCategories.find(
+          (c) => c.name.trim().toLowerCase() === item.categoryName!.trim().toLowerCase()
+        );
+        if (found) matchedCatId = found.id;
+      }
+      // 4. Keyword heuristic matching if no explicit category
+      if (!matchedCatId) {
+        const name = (item.itemName || '').toLowerCase();
+        for (const cat of effectivePurchaseCategories) {
+          const cName = cat.name.toLowerCase();
+          if (
+            (cName.includes('غذایی') || cName.includes('بهداشتی')) &&
+            /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات/.test(
+              name
+            )
+          ) {
+            matchedCatId = cat.id;
+            break;
+          } else if (
+            (cName.includes('قبض') || cName.includes('اینترنت')) &&
+            /قبض|آب|برق|گاز|اینترنت|تلفن|مخابرات|وای‌فای|شارژ/.test(name)
+          ) {
+            matchedCatId = cat.id;
+            break;
+          } else if (
+            (cName.includes('تعمیر') || cName.includes('نگهداری')) &&
+            /تعمیر|سرویس|نگهداری|رنگ|لوله|سیم‌کشی|شیرآلات|بنا|ابزار|تاسیسات|کاهگل|مرمت/.test(name)
+          ) {
+            matchedCatId = cat.id;
+            break;
+          } else if (
+            (cName.includes('تبلیغ') || cName.includes('محیط')) &&
+            /تبلیغ|چاپ|بنر|کاتالوگ|بروشور|عکاسی|فیلمبرداری|محیط زیست|فضای سبز|پسماند/.test(name)
+          ) {
+            matchedCatId = cat.id;
+            break;
+          } else if (
+            (cName.includes('تجهیزات') || cName.includes('ملزومات')) &&
+            /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ/.test(name)
+          ) {
+            matchedCatId = cat.id;
+            break;
+          }
+        }
+      }
+
+      if (matchedCatId) {
+        categorySpentMap[matchedCatId] = (categorySpentMap[matchedCatId] || 0) + amount;
+        matchedPurchaseItemIds.add(item.id);
+      }
+    });
+  });
+
+  // Calculate any unmatched purchase amounts
+  let unmatchedPurchasesSpent = 0;
+  inRangePurchases.forEach((inv) => {
+    (inv.items || []).forEach((item) => {
+      if (!matchedPurchaseItemIds.has(item.id)) {
+        unmatchedPurchasesSpent += Number(item.paidAmount || item.totalPrice) || 0;
+      }
+    });
+  });
+
+  // Build the list of budget rows strictly per Requirement 5:
+  // - حقوق و دستمزد و انعام پرسنل
+  // - ردیف‌های دسته‌بندی کالاها در «کاتالوگ کالا و خدمات برای خرید»
+  // - سود سرمایه گذار
+  const configRows = settings.budgetRows || [];
+
+  // 1. Wage row
+  const wageConfig = configRows.find(
+    (r) => r.isWageRow || r.name.includes('حقوق') || r.name.includes('دستمزد')
+  );
+  const wagePercentage = wageConfig ? Number(wageConfig.percentage) : 20;
+  const wageAllocated = (totalInScopeSalesRevenue * wagePercentage) / 100;
+  const wageRowCalculated = {
+    id: 'b-wages',
+    name: 'حقوق و دستمزد و انعام پرسنل',
+    badge: 'حقوق و دستمزد',
+    badgeColor: 'bg-blue-100 text-blue-800 border-blue-200',
+    percentage: wagePercentage,
+    allocatedBudget: wageAllocated,
+    actualSpent: totalInScopeWages,
+    variance: wageAllocated - totalInScopeWages,
+    usagePercent: wageAllocated > 0 ? (totalInScopeWages / wageAllocated) * 100 : 0
+  };
+
+  // 2. Purchase Category rows
+  const purchaseCategoryRowsCalculated = effectivePurchaseCategories.map((cat) => {
+    const catConfig = configRows.find(
+      (r) => (r.purchaseCategoryId && r.purchaseCategoryId === cat.id) || r.name.trim() === cat.name.trim()
+    );
+    let defaultPct = 10;
+    if (cat.name.includes('غذایی') || cat.name.includes('بهداشتی')) defaultPct = 25;
+    else if (cat.name.includes('قبض') || cat.name.includes('اینترنت')) defaultPct = 5;
+    else if (cat.name.includes('تعمیر') || cat.name.includes('نگهداری')) defaultPct = 10;
+    else if (cat.name.includes('تبلیغ') || cat.name.includes('محیط')) defaultPct = 5;
+    else if (cat.name.includes('تجهیزات') || cat.name.includes('ملزومات')) defaultPct = 5;
+
+    const percentage = catConfig ? Number(catConfig.percentage) : defaultPct;
+    const allocatedBudget = (totalInScopeSalesRevenue * percentage) / 100;
+    const actualSpent = categorySpentMap[cat.id] || 0;
+    const variance = allocatedBudget - actualSpent;
     const usagePercent = allocatedBudget > 0 ? (actualSpent / allocatedBudget) * 100 : 0;
 
     return {
-      ...row,
+      id: `b-pcat-${cat.id}`,
+      name: cat.name,
+      badge: 'کاتالوگ خرید',
+      badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      percentage,
       allocatedBudget,
       actualSpent,
       variance,
@@ -180,26 +308,89 @@ export function BudgetAndInvestorView({
     };
   });
 
-  // --- Investor Profit Calculation ---
-  // Exclude categories marked exempt (e.g. 'صنایع دستی / دست‌آفرید')
+  // Calculate Investor Profit Amount
   let investorEligibleRevenue = 0;
   inRangeSales.forEach((inv) => {
     inv.items.forEach((item) => {
       let isExempt = false;
       if (
-        (investorExemptCategoryIds.includes('cat-3') && (item.itemName.includes('گلاب') || item.itemName.includes('دست‌آفرید') || item.itemName.includes('گلیم') || item.itemName.includes('صنایع دستی')))
+        investorExemptCategoryIds.includes('cat-3') &&
+        (item.itemName.includes('گلاب') ||
+          item.itemName.includes('دست‌آفرید') ||
+          item.itemName.includes('گلیم') ||
+          item.itemName.includes('صنایع دستی'))
       ) {
         isExempt = true;
       }
       if (!isExempt) {
-        investorEligibleRevenue += (item.payableAmount || item.totalPrice || 0);
+        investorEligibleRevenue += item.payableAmount || item.totalPrice || 0;
       }
     });
   });
-
   const investorEligibleExpenses = totalInScopeExpenses;
   const investorNetBaseProfit = Math.max(0, investorEligibleRevenue - investorEligibleExpenses);
   const investorShareAmount = (investorNetBaseProfit * investorSharePercent) / 100;
+
+  // 3. Investor Profit row
+  const investorConfig = configRows.find(
+    (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
+  );
+  const investorPercentage = investorConfig
+    ? Number(investorConfig.percentage)
+    : (settings.investorSharePercent || 35);
+  const investorAllocated = (totalInScopeSalesRevenue * investorPercentage) / 100;
+  // Real cost: actual payouts if recorded, otherwise eligible profit share
+  const investorActualSpent = totalInvestorPayoutsPaid > 0 ? totalInvestorPayoutsPaid : investorShareAmount;
+  const investorRowCalculated = {
+    id: 'b-investor',
+    name: 'سود سرمایه‌گذار',
+    badge: 'سود سرمایه‌گذار',
+    badgeColor: 'bg-amber-100 text-amber-900 border-amber-300',
+    percentage: investorPercentage,
+    allocatedBudget: investorAllocated,
+    actualSpent: investorActualSpent,
+    variance: investorAllocated - investorActualSpent,
+    usagePercent: investorAllocated > 0 ? (investorActualSpent / investorAllocated) * 100 : 0
+  };
+
+  // Combine rows strictly according to Requirement 5
+  const budgetRowsWithCalculations = [
+    wageRowCalculated,
+    ...purchaseCategoryRowsCalculated,
+    investorRowCalculated,
+    ...(unmatchedPurchasesSpent > 0
+      ? [
+          {
+            id: 'b-unmatched',
+            name: 'سایر اقلام و هزینه‌های خرید (فاکتورهای ثبت شده)',
+            badge: 'خرید متفرقه',
+            badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+            percentage: 0,
+            allocatedBudget: 0,
+            actualSpent: unmatchedPurchasesSpent,
+            variance: -unmatchedPurchasesSpent,
+            usagePercent: 100
+          }
+        ]
+      : [])
+  ];
+
+  // Totals
+  const totalBudgetPercentageSum = budgetRowsWithCalculations.reduce(
+    (sum, r) => sum + (r.id !== 'b-unmatched' ? r.percentage : 0),
+    0
+  );
+  const totalAllocatedSum = budgetRowsWithCalculations.reduce(
+    (sum, r) => sum + r.allocatedBudget,
+    0
+  );
+  const totalActualSpentSum = budgetRowsWithCalculations.reduce(
+    (sum, r) => sum + r.actualSpent,
+    0
+  );
+  const totalVarianceSum = totalAllocatedSum - totalActualSpentSum;
+  const totalUsagePercentSum =
+    totalAllocatedSum > 0 ? (totalActualSpentSum / totalAllocatedSum) * 100 : 0;
 
   const toggleCategorySelection = (catId: string) => {
     setSelectedSalesCategoryIds((prev) =>
@@ -378,7 +569,16 @@ export function BudgetAndInvestorView({
                 return (
                   <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3 px-4 font-bold text-slate-900">
-                      {row.name}
+                      <div className="flex items-center gap-2">
+                        <span>{row.name}</span>
+                        {row.badge && (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-md border font-medium ${row.badgeColor || 'bg-slate-100 text-slate-700 border-slate-200'}`}
+                          >
+                            {row.badge}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-3 px-4 font-mono font-bold text-amber-900">
@@ -427,6 +627,40 @@ export function BudgetAndInvestorView({
                 );
               })}
             </tbody>
+            <tfoot className="bg-amber-950 text-white font-bold border-t-2 border-amber-900">
+              <tr>
+                <td className="py-3.5 px-4 text-xs">
+                  مجموع ردیف‌های مصوب بودجه اقامتگاه
+                </td>
+                <td className="py-3.5 px-4 font-mono text-amber-300">
+                  {totalBudgetPercentageSum}٪
+                </td>
+                <td className="py-3.5 px-4 font-mono">
+                  {formatPersianPrice(totalAllocatedSum)} تومان
+                </td>
+                <td className="py-3.5 px-4 font-mono text-amber-200">
+                  {formatPersianPrice(totalActualSpentSum)} تومان
+                </td>
+                <td className="py-3.5 px-4">
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold ${
+                      totalVarianceSum >= 0
+                        ? 'bg-emerald-800 text-emerald-100'
+                        : 'bg-rose-800 text-rose-100'
+                    }`}
+                  >
+                    {totalVarianceSum >= 0 ? '+' : ''}
+                    {formatPersianPrice(totalVarianceSum)} تومان{' '}
+                    {totalVarianceSum >= 0 ? '(تراز مثبت)' : '(کسری)'}
+                  </span>
+                </td>
+                <td className="py-3.5 px-4">
+                  <span className="font-mono text-xs">
+                    {Math.round(totalUsagePercentSum)}٪
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

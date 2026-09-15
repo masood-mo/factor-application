@@ -19,9 +19,15 @@ import {
   fetchCategories,
   saveCategory,
   deleteCategory,
+  fetchPurchaseCategories,
+  savePurchaseCategory,
+  deletePurchaseCategory,
   fetchItems,
   saveItem,
   deleteItem,
+  fetchPurchaseItems,
+  savePurchaseItem,
+  deletePurchaseItem,
   fetchSalesInvoices,
   saveSalesInvoice,
   deleteSalesInvoice,
@@ -74,7 +80,10 @@ export default function App() {
   // App Data State
   const [settings, setSettings] = useState<LodgeSettings>(DEFAULT_SETTINGS);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [purchaseCategories, setPurchaseCategories] = useState<Category[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [purchaseItems, setPurchaseItems] = useState<Item[]>([]);
+  const [catalogMode, setCatalogMode] = useState<'SALES' | 'PURCHASE'>('SALES');
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -94,10 +103,12 @@ export default function App() {
     async function loadData() {
       setLoading(true);
       try {
-        const [st, cats, its, sales, purchases, gst, wtxs, chq, wgs, invs, payouts] = await Promise.all([
+        const [st, cats, pcats, its, pits, sales, purchases, gst, wtxs, chq, wgs, invs, payouts] = await Promise.all([
           fetchSettings(),
           fetchCategories(),
+          fetchPurchaseCategories(),
           fetchItems(),
+          fetchPurchaseItems(),
           fetchSalesInvoices(),
           fetchPurchaseInvoices(),
           fetchGuests(),
@@ -110,7 +121,9 @@ export default function App() {
 
         setSettings(st);
         setCategories(cats);
+        setPurchaseCategories(pcats);
         setItems(its);
+        setPurchaseItems(pits);
         setSalesInvoices(sales);
         setPurchaseInvoices(purchases);
         setGuests(gst);
@@ -172,6 +185,21 @@ export default function App() {
     setCategories([...updated]);
   };
 
+  // Handlers for Purchase Categories
+  const handleSavePurchaseCategory = async (cat: Partial<Category>): Promise<Category> => {
+    const saved = await savePurchaseCategory(cat);
+    const updated = await fetchPurchaseCategories();
+    setPurchaseCategories([...updated]);
+    return saved;
+  };
+
+  const handleDeletePurchaseCategory = async (id: string) => {
+    setPurchaseCategories((prev) => prev.filter((c) => c.id !== id));
+    await deletePurchaseCategory(id);
+    const updated = await fetchPurchaseCategories();
+    setPurchaseCategories([...updated]);
+  };
+
   // Handlers for Items
   const handleSaveItem = async (it: Partial<Item>): Promise<Item> => {
     const saved = await saveItem(it);
@@ -194,6 +222,21 @@ export default function App() {
     await deleteItem(id);
     const updated = await fetchItems();
     setItems([...updated]);
+  };
+
+  // Handlers for Purchase Items
+  const handleSavePurchaseItem = async (it: Partial<Item>): Promise<Item> => {
+    const saved = await savePurchaseItem(it);
+    const updated = await fetchPurchaseItems();
+    setPurchaseItems([...updated]);
+    return saved;
+  };
+
+  const handleDeletePurchaseItem = async (id: string) => {
+    setPurchaseItems((prev) => prev.filter((i) => i.id !== id));
+    await deletePurchaseItem(id);
+    const updated = await fetchPurchaseItems();
+    setPurchaseItems([...updated]);
   };
 
   // Auto-Create Item from Sales Invoice (if user typed new item name)
@@ -437,7 +480,8 @@ export default function App() {
         {activeTab === 'new_purchase_invoice' && (
           <PurchaseInvoiceFormView
             settings={settings}
-            existingItems={items}
+            existingItems={purchaseItems}
+            categories={purchaseCategories}
             invoiceToEdit={editingPurchaseInvoice}
             onSaveInvoice={handleSavePurchaseInvoice}
             onCancelEdit={
@@ -547,23 +591,35 @@ export default function App() {
             purchaseInvoices={purchaseInvoices}
             wagePayments={wagePayments}
             categories={categories}
+            purchaseCategories={purchaseCategories}
+            purchaseItems={purchaseItems}
+            investorPayouts={investorPayouts}
+            investors={investors}
           />
         )}
 
         {/* 9. Items & Categories Catalog */}
         {activeTab === 'items_catalog' && (
           <ItemsCatalogView
-            categories={categories}
-            items={items}
+            catalogType={catalogMode}
+            onSwitchCatalogType={(type) => setCatalogMode(type)}
+            categories={catalogMode === 'PURCHASE' ? purchaseCategories : categories}
+            items={catalogMode === 'PURCHASE' ? purchaseItems : items}
             settings={settings}
-            onSaveCategory={handleSaveCategory}
-            onDeleteCategory={handleDeleteCategory}
-            onSaveItem={handleSaveItem}
-            onDeleteItem={handleDeleteItem}
+            onSaveCategory={catalogMode === 'PURCHASE' ? handleSavePurchaseCategory : handleSaveCategory}
+            onDeleteCategory={catalogMode === 'PURCHASE' ? handleDeletePurchaseCategory : handleDeleteCategory}
+            onSaveItem={catalogMode === 'PURCHASE' ? handleSavePurchaseItem : handleSaveItem}
+            onDeleteItem={catalogMode === 'PURCHASE' ? handleDeletePurchaseItem : handleDeleteItem}
             onRefresh={async () => {
-              const [cats, its] = await Promise.all([fetchCategories(), fetchItems()]);
-              setCategories([...cats]);
-              setItems([...its]);
+              if (catalogMode === 'PURCHASE') {
+                const [pcats, pits] = await Promise.all([fetchPurchaseCategories(), fetchPurchaseItems()]);
+                setPurchaseCategories([...pcats]);
+                setPurchaseItems([...pits]);
+              } else {
+                const [cats, its] = await Promise.all([fetchCategories(), fetchItems()]);
+                setCategories([...cats]);
+                setItems([...its]);
+              }
             }}
           />
         )}
@@ -583,7 +639,7 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsView
             settings={settings}
-            categories={categories}
+            purchaseCategories={purchaseCategories}
             onSaveSettings={handleSaveSettings}
           />
         )}

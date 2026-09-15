@@ -139,6 +139,12 @@ export const Header: React.FC<HeaderProps> = ({
           icon: CreditCard
         },
         {
+          id: 'purchase_items_catalog' as ActiveTab,
+          label: 'کاتالوگ کالا و خدمات خرید',
+          desc: 'دسته‌بندی‌های هزینه و اقلام خرید اقامتگاه',
+          icon: ShoppingBag
+        },
+        {
           id: 'wages_list' as ActiveTab,
           label: 'دستمزد و حقوق پرسنل',
           desc: 'ثبت پرداختی‌ها و تسویه کارکنان',
@@ -182,8 +188,8 @@ export const Header: React.FC<HeaderProps> = ({
       subItems: [
         {
           id: 'items_catalog' as ActiveTab,
-          label: 'کاتالوگ کالاها و خدمات',
-          desc: 'تعریف اتاق‌ها، غذاها و خدمات بوم‌گردی',
+          label: 'کاتالوگ کالا و خدمات فروش',
+          desc: 'تعریف اتاق‌ها، وعده‌های غذایی و تورهای اقامتگاه',
           icon: List
         },
         {
