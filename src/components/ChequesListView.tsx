@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Cheque, LodgeSettings } from '../types';
 import { formatPersianPrice, getCurrentJalaliDate, getChequeAlarmStatus, formatPersianDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 
 interface ChequesListViewProps {
   cheques: Cheque[];
@@ -491,14 +492,12 @@ export function ChequesListView({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ سررسید (YYYY/MM/DD) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="1403/08/15"
+                  <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ سررسید *</label>
+                  <PersianDatePicker
                     value={editingChequeData.dueDate || ''}
-                    onChange={(e) => setEditingChequeData({ ...editingChequeData, dueDate: e.target.value })}
-                    className="w-full p-2 border border-slate-300 rounded-xl text-xs font-mono font-bold focus:ring-2 focus:ring-amber-700 outline-hidden"
+                    onChange={(newD) => setEditingChequeData({ ...editingChequeData, dueDate: newD })}
+                    placeholder="انتخاب سررسید چک..."
+                    required
                   />
                 </div>
               </div>

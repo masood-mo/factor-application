@@ -50,6 +50,14 @@ function jalaliToGregorian(jy: number, jm: number, jd: number): [number, number,
   return [gy, gm, days + 1];
 }
 
+export function isJalaliLeapYear(jy: number): boolean {
+  // Jalali leap year algorithm (33-year cycle)
+  const r = (jy - (jy > 0 ? 474 : 473)) % 2820 + 474 + 38;
+  return ((r * 682) % 2816) < 682;
+}
+
+export { jalaliToGregorian, gregorianToJalali };
+
 export function getCurrentJalaliDate(): string {
   const now = new Date();
   const [jy, jm, jd] = gregorianToJalali(now.getFullYear(), now.getMonth() + 1, now.getDate());

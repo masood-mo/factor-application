@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { PurchaseInvoice } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { isDateInRange, formatPersianDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 import { ShoppingBag, Search, Calendar, Edit3, Trash2, CheckCircle2, Clock, Filter, Plus } from 'lucide-react';
 
 interface PurchaseInvoicesListViewProps {
@@ -70,12 +71,12 @@ export const PurchaseInvoicesListView: React.FC<PurchaseInvoicesListViewProps> =
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             از تاریخ:
           </label>
-          <input
-            type="text"
-            placeholder="مثال: 1403/01/01"
+          <PersianDatePicker
+            placeholder="مثال: ۱۴۰۳/۰۱/۰۱"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-hidden"
+            onChange={(newD) => setStartDate(newD)}
+            allowClear
+            iconColor="text-emerald-700"
           />
         </div>
 
@@ -84,12 +85,12 @@ export const PurchaseInvoicesListView: React.FC<PurchaseInvoicesListViewProps> =
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             تا تاریخ:
           </label>
-          <input
-            type="text"
-            placeholder="مثال: 1403/12/29"
+          <PersianDatePicker
+            placeholder="مثال: ۱۴۰۳/۱۲/۲۹"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-hidden"
+            onChange={(newD) => setEndDate(newD)}
+            allowClear
+            iconColor="text-emerald-700"
           />
         </div>
 

@@ -8,6 +8,7 @@ import {
   Guest
 } from '../types';
 import { getCurrentJalaliDate, generateNextInvoiceSerialNumber } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 import { numberToWordsPersian, formatPersianPrice } from '../utils/numberToWords';
 import { VoiceInvoiceModal } from './VoiceInvoiceModal';
 import {
@@ -696,12 +697,10 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
             {/* Date */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ فاکتور (شمسی):</label>
-              <input
-                type="text"
+              <PersianDatePicker
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
-                placeholder="۱۴۰۳/۰۱/۰۱"
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-center focus:ring-2 focus:ring-amber-700 outline-hidden bg-white"
+                onChange={(newDate) => setDate(newDate)}
+                placeholder="انتخاب تاریخ فاکتور..."
                 required
               />
             </div>
@@ -1105,13 +1104,15 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {payments.map((p, idx) => (
                     <div key={p.id || idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                      <input
-                        type="text"
-                        value={p.date}
-                        onChange={(e) => handleUpdatePayment(idx, 'date', e.target.value)}
-                        placeholder="تاریخ"
-                        className="w-24 px-2 py-1 border border-slate-300 rounded-lg font-mono text-[11px] bg-white"
-                      />
+                      <div className="w-36">
+                        <PersianDatePicker
+                          value={p.date}
+                          onChange={(newD) => handleUpdatePayment(idx, 'date', newD)}
+                          placeholder="تاریخ واریز"
+                          showTodayBtn={false}
+                          inputClassName="py-1 px-2 text-[11px]"
+                        />
+                      </div>
                       <input
                         type="number"
                         value={p.amount}

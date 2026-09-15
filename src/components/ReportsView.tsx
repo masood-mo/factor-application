@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SalesInvoice, PurchaseInvoice, Category } from '../types';
 import { formatPersianPrice, numberToWordsPersian } from '../utils/numberToWords';
 import { isDateInRange, formatPersianDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import {
   BarChart3,
@@ -150,24 +151,28 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-slate-500">از:</span>
-            <input
-              type="text"
-              placeholder="1403/01/01"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-amber-700 outline-hidden w-28 text-center"
-            />
+            <div className="w-36">
+              <PersianDatePicker
+                placeholder="۱۴۰۳/۰۱/۰۱"
+                value={startDate}
+                onChange={(newD) => setStartDate(newD)}
+                allowClear
+                inputClassName="py-1 px-2 text-xs"
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="text-slate-500">تا:</span>
-            <input
-              type="text"
-              placeholder="1403/12/29"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-amber-700 outline-hidden w-28 text-center"
-            />
+            <div className="w-36">
+              <PersianDatePicker
+                placeholder="۱۴۰۳/۱۲/۲۹"
+                value={endDate}
+                onChange={(newD) => setEndDate(newD)}
+                allowClear
+                inputClassName="py-1 px-2 text-xs"
+              />
+            </div>
           </div>
         </div>
 

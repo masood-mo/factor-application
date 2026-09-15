@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { SalesInvoice } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { isDateInRange, formatPersianDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 import {
   FileText,
   Search,
@@ -118,12 +119,12 @@ export const SalesInvoicesListView: React.FC<SalesInvoicesListViewProps> = ({
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             از تاریخ:
           </label>
-          <input
-            type="text"
-            placeholder="مثال: 1403/01/01"
+          <PersianDatePicker
+            placeholder="مثال: ۱۴۰۳/۰۱/۰۱"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden"
+            onChange={(newD) => setStartDate(newD)}
+            allowClear
+            iconColor="text-amber-800"
           />
         </div>
 
@@ -133,12 +134,12 @@ export const SalesInvoicesListView: React.FC<SalesInvoicesListViewProps> = ({
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             تا تاریخ:
           </label>
-          <input
-            type="text"
-            placeholder="مثال: 1403/12/29"
+          <PersianDatePicker
+            placeholder="مثال: ۱۴۰۳/۱۲/۲۹"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden"
+            onChange={(newD) => setEndDate(newD)}
+            allowClear
+            iconColor="text-amber-800"
           />
         </div>
 

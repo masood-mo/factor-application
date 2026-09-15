@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { WagePayment } from '../types';
 import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 
 interface WagesListViewProps {
   wagePayments: WagePayment[];
@@ -322,13 +323,11 @@ export function WagesListView({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">تاریخ پرداخت *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="1403/05/30"
+                  <PersianDatePicker
                     value={editingWage.date || ''}
-                    onChange={(e) => setEditingWage({ ...editingWage, date: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono font-bold focus:ring-2 focus:ring-amber-700 outline-hidden"
+                    onChange={(newD) => setEditingWage({ ...editingWage, date: newD })}
+                    placeholder="انتخاب تاریخ پرداخت..."
+                    required
                   />
                 </div>
               </div>

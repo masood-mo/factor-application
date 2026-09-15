@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item } from '../types';
 import { getCurrentJalaliDate } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText } from 'lucide-react';
 
@@ -202,15 +203,18 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
               </div>
 
               <div className="bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-800 flex items-center gap-2">
-                <span className="text-emerald-300">تاریخ فاکتور:</span>
-                <input
-                  type="text"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                  placeholder="۱۴۰۳/۰۱/۰۱"
-                  className="bg-emerald-950 text-emerald-100 font-bold px-2 py-0.5 rounded-md border border-emerald-700 w-28 text-center outline-hidden"
-                />
+                <span className="text-emerald-300 text-xs font-bold">تاریخ فاکتور:</span>
+                <div className="w-36">
+                  <PersianDatePicker
+                    value={date}
+                    onChange={(newD) => setDate(newD)}
+                    placeholder="تاریخ فاکتور"
+                    inputClassName="bg-emerald-950 text-emerald-100 border-emerald-700 font-bold py-1 px-2 text-xs"
+                    iconColor="text-emerald-400"
+                    align="left"
+                    required
+                  />
+                </div>
               </div>
             </div>
           </div>

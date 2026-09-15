@@ -31,6 +31,7 @@ import {
   getLastDayOfMonthJalali,
   isDateInRange
 } from '../utils/persianDate';
+import { PersianDatePicker } from './PersianDatePicker';
 
 interface BudgetAndInvestorViewProps {
   salesInvoices: SalesInvoice[];
@@ -260,21 +261,23 @@ export function BudgetAndInvestorView({
         <div className="flex items-center gap-3">
           <Calendar className="w-4 h-4 text-amber-800" />
           <span className="text-xs font-bold text-slate-700">بازه محاسباتی:</span>
-          <input
-            type="text"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden w-28 text-center"
-            placeholder="شروع"
-          />
+          <div className="w-36">
+            <PersianDatePicker
+              value={startDate}
+              onChange={(newD) => setStartDate(newD)}
+              placeholder="شروع"
+              inputClassName="py-1 px-2 text-xs"
+            />
+          </div>
           <span className="text-xs text-slate-400">تا</span>
-          <input
-            type="text"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden w-28 text-center"
-            placeholder="پایان"
-          />
+          <div className="w-36">
+            <PersianDatePicker
+              value={endDate}
+              onChange={(newD) => setEndDate(newD)}
+              placeholder="پایان"
+              inputClassName="py-1 px-2 text-xs"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-4 text-xs">
