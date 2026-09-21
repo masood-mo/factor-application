@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item, Category } from '../types';
-import { getCurrentJalaliDate } from '../utils/persianDate';
+import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate';
+import { savePurchaseItem } from '../services/dbService';
 import { PersianDatePicker } from './PersianDatePicker';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText } from 'lucide-react';
@@ -11,6 +12,7 @@ interface PurchaseInvoiceFormViewProps {
   categories?: Category[];
   invoiceToEdit?: PurchaseInvoice | null;
   onSaveInvoice: (invoice: Partial<PurchaseInvoice>) => Promise<PurchaseInvoice>;
+  onAutoCreatePurchaseItem?: (item: Partial<Item>) => Promise<Item>;
   onCancelEdit?: () => void;
 }
 
@@ -20,6 +22,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   categories = [],
   invoiceToEdit,
   onSaveInvoice,
+  onAutoCreatePurchaseItem,
   onCancelEdit,
 }) => {
   const [serialNumber, setSerialNumber] = useState<string>(
@@ -29,6 +32,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   const [vendorName, setVendorName] = useState<string>(invoiceToEdit?.vendorName || '');
   const [notes, setNotes] = useState<string>(invoiceToEdit?.notes || '');
   const [paid, setPaid] = useState<boolean>(invoiceToEdit?.paid ?? true);
+  const [activeItemSuggestIndex, setActiveItemSuggestIndex] = useState<number | null>(null);
 
   const [items, setItems] = useState<PurchaseInvoiceItem[]>(
     invoiceToEdit?.items || [
@@ -48,6 +52,8 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   );
 
   const [saving, setSaving] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (invoiceToEdit) {
@@ -80,16 +86,19 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   const handleItemChange = (index: number, field: keyof PurchaseInvoiceItem, value: any) => {
     const newItems = [...items];
     let row = { ...newItems[index] };
-    (row as any)[field] = value;
+    if (field === 'itemName') {
+      row.itemName = value;
+      // Disconnect itemId if user changed or typed a custom item name
+      row.itemId = undefined;
+    } else {
+      (row as any)[field] = value;
+    }
     newItems[index] = recalculateRow(row);
     setItems(newItems);
   };
 
-  // When user selects a predefined item from the catalog list
-  const handleSelectCatalogItem = (index: number, itemId: string) => {
-    const selected = existingItems.find((it) => it.id === itemId);
-    if (!selected) return;
-
+  // When user selects a suggestion from the item autocomplete
+  const handleSelectCatalogItem = (index: number, selected: Item) => {
     const newItems = [...items];
     let row = { ...newItems[index] };
     row.itemId = selected.id;
@@ -101,6 +110,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
     newItems[index] = recalculateRow(row);
     setItems(newItems);
+    setActiveItemSuggestIndex(null);
   };
 
   const handleAddRow = () => {
@@ -122,7 +132,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
   const handleRemoveRow = (index: number) => {
     if (items.length <= 1) {
-      alert('فاکتور خرید باید حداقل شامل یک ردیف باشد.');
+      setFormError('فاکتور خرید باید حداقل شامل یک ردیف باشد.');
       return;
     }
     const updated = items.filter((_, i) => i !== index).map((row, i) => ({ ...row, rowNum: i + 1 }));
@@ -136,34 +146,91 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    setFormSuccess(null);
+
     if (!vendorName.trim()) {
-      alert('لطفاً نام فروشنده یا تأمین‌کننده را وارد کنید.');
+      setFormError('لطفاً نام فروشنده یا تأمین‌کننده را وارد کنید.');
       return;
     }
-    if (items.some((it) => !it.itemName.trim())) {
-      alert('لطفاً نام تمام اقلام فاکتور خرید را وارد کنید.');
+    if (items.length === 0) {
+      setFormError('لطفاً حداقل یک ردیف کالا به فاکتور خرید اضافه کنید.');
+      return;
+    }
+    const emptyRowIdx = items.findIndex((it) => !it.itemName.trim());
+    if (emptyRowIdx !== -1) {
+      setFormError(`لطفاً نام کالا را در ردیف ${emptyRowIdx + 1} وارد کنید.`);
       return;
     }
 
     setSaving(true);
     try {
+      // Process items: auto-save newly typed items into purchase items database (Requirement 5)
+      const processedItems = [...items];
+      for (let i = 0; i < processedItems.length; i++) {
+        const row = processedItems[i];
+        if (!row.itemId && row.itemName.trim()) {
+          const trimmed = row.itemName.trim();
+          const existing = existingItems.find(
+            (ex) => normalizePersianText(ex.name) === normalizePersianText(trimmed)
+          );
+          if (existing) {
+            row.itemId = existing.id;
+            row.categoryId = existing.categoryId;
+            row.categoryName = existing.categoryName;
+          } else {
+            const catId = row.categoryId || (categories.length > 0 ? categories[0].id : '');
+            const catName = row.categoryName || (categories.find((c) => c.id === catId)?.name) || 'سایر هزینه‌ها';
+            try {
+              let savedItem: Item | null = null;
+              if (onAutoCreatePurchaseItem) {
+                savedItem = await onAutoCreatePurchaseItem({
+                  name: trimmed,
+                  categoryId: catId,
+                  categoryName: catName,
+                  unit: row.unit || 'عدد',
+                  basePrice: Number(row.unitPrice) || 0,
+                  type: 'PURCHASE',
+                });
+              } else {
+                savedItem = await savePurchaseItem({
+                  name: trimmed,
+                  categoryId: catId,
+                  categoryName: catName,
+                  unit: row.unit || 'عدد',
+                  basePrice: Number(row.unitPrice) || 0,
+                  type: 'PURCHASE',
+                });
+              }
+              if (savedItem?.id) {
+                row.itemId = savedItem.id;
+                row.categoryId = catId;
+                row.categoryName = catName;
+              }
+            } catch (err) {
+              console.warn('Could not auto-create purchase item:', err);
+            }
+          }
+        }
+      }
+
       await onSaveInvoice({
         id: invoiceToEdit?.id,
-        serialNumber,
-        date,
-        vendorName,
-        notes,
-        items,
+        serialNumber: serialNumber.trim() || `PUR-${Math.floor(1000 + Math.random() * 9000)}`,
+        date: date || getCurrentJalaliDate(),
+        vendorName: vendorName.trim(),
+        notes: notes.trim(),
+        items: processedItems,
         totalAmount,
         totalDiscount,
         totalPaid,
         paid,
       });
 
-      alert(invoiceToEdit ? 'فاکتور خرید با موفقیت بروزرسانی شد.' : 'فاکتور خرید با موفقیت ثبت شد.');
+      setFormSuccess(invoiceToEdit ? 'فاکتور خرید با موفقیت بروزرسانی شد.' : 'فاکتور خرید با موفقیت ثبت شد.');
     } catch (err) {
       console.error(err);
-      alert('خطا در ثبت فاکتور خرید');
+      setFormError('خطا در ثبت فاکتور خرید. لطفاً مجدداً بررسی فرمایید.');
     } finally {
       setSaving(false);
     }
@@ -171,7 +238,20 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
   return (
     <div className="max-w-6xl mx-auto py-6 px-3 sm:px-6">
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} noValidate className="space-y-6">
+        {formError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-xl flex items-center gap-2">
+            <span>⚠️</span>
+            <span>{formError}</span>
+          </div>
+        )}
+        {formSuccess && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span>{formSuccess}</span>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden">
           
           {/* Header */}
@@ -199,7 +279,6 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                   type="text"
                   value={serialNumber}
                   onChange={(e) => setSerialNumber(e.target.value)}
-                  required
                   className="bg-emerald-950 text-amber-300 font-mono font-bold px-2 py-0.5 rounded-md border border-emerald-700 w-28 text-center outline-hidden"
                 />
               </div>
@@ -214,7 +293,6 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                     inputClassName="bg-emerald-950 text-emerald-100 border-emerald-700 font-bold py-1 px-2 text-xs"
                     iconColor="text-emerald-400"
                     align="left"
-                    required
                   />
                 </div>
               </div>
@@ -232,7 +310,6 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                 type="text"
                 value={vendorName}
                 onChange={(e) => setVendorName(e.target.value)}
-                required
                 placeholder="مثال: فروشگاه مواد غذایی نمونه / صنایع دستی اصفهان"
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden"
               />
@@ -253,12 +330,12 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
           </div>
 
           {/* Purchase Items Table (All 9 Columns) */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-h-[380px] pb-32">
             <table className="w-full text-right text-xs">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
                 <tr>
                   <th className="px-2 py-3 text-center w-10">ردیف</th>
-                  <th className="px-3 py-3 min-w-[220px]">نام کالا / انتخاب از فهرست کالاها</th>
+                  <th className="px-3 py-3 min-w-[280px]">نام کالا (با جستجوی خودکار)</th>
                   <th className="px-2 py-3 w-28">واحد اندازه‌گیری</th>
                   <th className="px-2 py-3 w-20 text-center">تعداد/مقدار</th>
                   <th className="px-3 py-3 w-32">قیمت خرید واحد (تومان)</th>
@@ -271,84 +348,130 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
               </thead>
 
               <tbody className="divide-y divide-slate-200">
-                {items.map((row, idx) => (
-                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-2 py-2 text-center font-bold text-slate-500 bg-slate-50">
-                      {idx + 1}
-                    </td>
+                {items.map((row, idx) => {
+                  const filteredItemSuggestions = (row.itemName || '').trim()
+                    ? existingItems.filter((it) =>
+                        normalizePersianText(it.name).includes(normalizePersianText((row.itemName || '').trim()))
+                      )
+                    : existingItems.slice(0, 8);
 
-                    {/* Item Name / Catalog Select */}
-                    <td className="px-2 py-2">
-                      <div className="space-y-1">
-                        {existingItems.length > 0 && (
-                          <select
-                            onChange={(e) => handleSelectCatalogItem(idx, e.target.value)}
-                            value={row.itemId || ''}
-                            className="w-full p-1 bg-emerald-50/70 border border-emerald-200 rounded-lg text-[11px] font-semibold text-emerald-950 focus:ring-1 focus:ring-emerald-700 outline-hidden"
-                          >
-                            <option value="">-- انتخاب از کاتالوگ خرید اقامتگاه --</option>
-                            {existingItems.map((catIt) => (
-                              <option key={catIt.id} value={catIt.id}>
-                                {catIt.name} ({catIt.categoryName}) - واحد: {catIt.unit}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <input
-                          type="text"
-                          value={row.itemName}
-                          onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
-                          placeholder="نام کالای خریداری شده..."
-                          required
-                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden"
-                        />
-                        {categories.length > 0 && (
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <span className="text-[10px] text-slate-400">دسته هزینه:</span>
-                            <select
-                              value={row.categoryId || ''}
+                  return (
+                    <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-2 py-2 text-center font-bold text-slate-500 bg-slate-50">
+                        {idx + 1}
+                      </td>
+
+                      {/* Item Name with Autocomplete */}
+                      <td className="px-2 py-2 min-w-[280px]">
+                        <div className="space-y-1">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={row.itemName || ''}
                               onChange={(e) => {
-                                const selCat = categories.find((c) => c.id === e.target.value);
-                                handleItemChange(idx, 'categoryId', e.target.value);
-                                handleItemChange(idx, 'categoryName', selCat?.name || '');
+                                handleItemChange(idx, 'itemName', e.target.value);
+                                setActiveItemSuggestIndex(idx);
                               }}
-                              className="text-[10px] font-bold text-emerald-800 bg-emerald-50/60 border border-emerald-200 rounded px-1 py-0.5 outline-hidden"
-                            >
-                              <option value="">(انتخاب دسته‌بندی هزینه)</option>
-                              {categories.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    </td>
+                              onFocus={() => setActiveItemSuggestIndex(idx)}
+                              onBlur={() => {
+                                setTimeout(() => {
+                                  setActiveItemSuggestIndex((curr) => (curr === idx ? null : curr));
+                                }, 250);
+                              }}
+                              placeholder="تایپ نام کالا (با جستجوی خودکار در کاتالوگ خرید)..."
+                              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden bg-white"
+                            />
 
-                    {/* Unit auto-set based on catalog item or customizable */}
-                    <td className="px-1 py-2">
-                      <select
-                        value={row.unit}
-                        onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                        className="w-full px-1.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden bg-white font-medium"
-                      >
-                        {settings.units.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                            {/* Autocomplete Suggestions Dropdown */}
+                            {activeItemSuggestIndex === idx && filteredItemSuggestions.length > 0 && (
+                              <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-emerald-300 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto">
+                                <div className="px-3 py-1.5 bg-emerald-50 border-b border-emerald-100 text-[10px] text-emerald-900 font-bold flex items-center justify-between">
+                                  <span>کالاهای موجود در کاتالوگ خرید:</span>
+                                  <span className="text-slate-400 font-normal">کلیک جهت انتخاب</span>
+                                </div>
+                                {filteredItemSuggestions.map((catIt) => (
+                                  <div
+                                    key={catIt.id}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      handleSelectCatalogItem(idx, catIt);
+                                    }}
+                                    className="px-3 py-2 hover:bg-emerald-50 cursor-pointer flex items-center justify-between border-b border-slate-50 last:border-0 transition-colors"
+                                  >
+                                    <div>
+                                      <p className="text-xs font-bold text-slate-800">{catIt.name}</p>
+                                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                        دسته: {catIt.categoryName || 'عمومی'} | واحد: {catIt.unit || 'عدد'}
+                                      </span>
+                                    </div>
+                                    {catIt.basePrice > 0 && (
+                                      <span className="text-xs font-mono font-bold text-emerald-900 bg-emerald-100/70 px-2 py-0.5 rounded">
+                                        {catIt.basePrice.toLocaleString('fa-IR')} ت
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {row.itemId && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
+                              ✓ کاتالوگ خرید: {row.categoryName || 'خرید'}
+                            </span>
+                          )}
+
+                          {categories.length > 0 && (
+                            <div className="flex items-center gap-1.5 mt-1 bg-slate-50 border border-slate-200 rounded-lg p-1.5">
+                              <span className="text-[10px] font-bold text-slate-600 whitespace-nowrap">
+                                {row.itemId ? 'دسته هزینه:' : 'انتخاب دسته‌بندی کالا یا خدمات:'}
+                              </span>
+                              <select
+                                value={row.categoryId || ''}
+                                onChange={(e) => {
+                                  const selCat = categories.find((c) => c.id === e.target.value);
+                                  handleItemChange(idx, 'categoryId', e.target.value);
+                                  handleItemChange(idx, 'categoryName', selCat?.name || '');
+                                }}
+                                className="w-full text-[11px] font-bold text-emerald-900 bg-white border border-slate-300 rounded px-1.5 py-1 outline-hidden"
+                              >
+                                <option value="">(انتخاب دسته‌بندی هزینه)</option>
+                                {categories.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Unit auto-set based on catalog item or customizable */}
+                      <td className="px-1 py-2">
+                        <select
+                          value={row.unit}
+                          onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                          className="w-full px-1.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden bg-white font-medium text-center"
+                        >
+                          {settings.units.map((u) => (
+                            <option key={u} value={u}>
+                              {u}
+                            </option>
+                          ))}
+                          {row.unit && !settings.units.includes(row.unit) && (
+                            <option value={row.unit}>{row.unit}</option>
+                          )}
+                        </select>
+                      </td>
 
                     <td className="px-1 py-2">
                       <input
                         type="number"
-                        min="0.1"
+                        min="0.01"
                         step="any"
-                        value={row.quantity || ''}
+                        value={row.quantity !== undefined ? row.quantity : 1}
                         onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                        required
                         className="w-full px-1.5 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-center focus:ring-2 focus:ring-emerald-500 outline-hidden"
                       />
                     </td>
@@ -358,9 +481,8 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                         type="number"
                         min="0"
                         step="1000"
-                        value={row.unitPrice || ''}
+                        value={row.unitPrice !== undefined ? row.unitPrice : 0}
                         onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                        required
                         className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-emerald-500 outline-hidden"
                       />
                     </td>
@@ -405,8 +527,9 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                       </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
+                );
+              })}
+            </tbody>
 
               {/* Totals Summary Row */}
               <tfoot className="bg-emerald-100/60 font-bold text-slate-900 border-t-2 border-emerald-300">

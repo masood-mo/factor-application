@@ -56,6 +56,8 @@ export interface SalesInvoiceItem {
   id: string;
   rowNum: number;
   itemId?: string;
+  categoryId?: string;
+  categoryName?: string;
   itemName: string;
   unit: string;
   quantity: number;

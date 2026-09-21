@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Category, Item, LodgeSettings } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { FolderPlus, PackagePlus, Search, Edit3, Trash2, Folder, Tag, Plus, Check, X, Filter, RefreshCw, Loader2 } from 'lucide-react';
@@ -39,6 +39,13 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
   const [itemModalOpen, setItemModalOpen] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<Partial<Item> | null>(null);
+  const [itemSaveError, setItemSaveError] = useState<string | null>(null);
+  const [isSavingItem, setIsSavingItem] = useState<boolean>(false);
+
+  // Reset selected category whenever switching between Sales and Purchase catalogs
+  useEffect(() => {
+    setSelectedCategoryId('ALL');
+  }, [catalogType]);
 
   // Category Modal Handlers
   const handleOpenCategoryModal = (cat?: Category) => {
@@ -78,7 +85,9 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
   // Item Modal Handlers
   const handleOpenItemModal = (item?: Item) => {
-    const initialCatId = selectedCategoryId !== 'ALL' ? selectedCategoryId : (categories[0]?.id || '');
+    setItemSaveError(null);
+    const isValidCategory = selectedCategoryId !== 'ALL' && categories.some((c) => c.id === selectedCategoryId);
+    const initialCatId = isValidCategory ? selectedCategoryId : (categories[0]?.id || '');
     const foundCat = categories.find((c) => c.id === initialCatId);
 
     setEditingItem(
@@ -86,7 +95,7 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
         ? { ...item }
         : {
             categoryId: initialCatId,
-            categoryName: foundCat?.name || 'سایر',
+            categoryName: foundCat?.name || (categories[0]?.name || (isPurchase ? 'سایر هزینه‌ها' : 'سایر')),
             name: '',
             unit: settings.units[0] || 'عدد',
             basePrice: 0,
@@ -97,23 +106,35 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
 
   const handleSaveItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem?.name || !editingItem?.categoryId) {
-      alert('لطفاً نام کالا و دسته را وارد کنید.');
+    setItemSaveError(null);
+
+    if (!editingItem?.name?.trim()) {
+      setItemSaveError('لطفاً نام کالا یا خدمت را وارد کنید.');
       return;
     }
 
-    const categoryObj = categories.find((c) => c.id === editingItem.categoryId);
+    const catId = editingItem.categoryId || categories[0]?.id || '';
+    if (!catId) {
+      setItemSaveError('لطفاً ابتدا از بخش «ایجاد دسته خرید جدید»، حداقل یک دسته‌بندی تعریف کنید.');
+      return;
+    }
+
+    const categoryObj = categories.find((c) => c.id === catId);
+    setIsSavingItem(true);
 
     try {
       await onSaveItem({
         ...editingItem,
-        categoryName: categoryObj?.name || editingItem.categoryName || 'سایر',
+        categoryId: catId,
+        categoryName: categoryObj?.name || editingItem.categoryName || (isPurchase ? 'سایر هزینه‌ها' : 'سایر'),
       });
       setItemModalOpen(false);
       setEditingItem(null);
     } catch (err) {
       console.error(err);
-      alert('خطا در ذخیره کالا');
+      setItemSaveError('خطا در ذخیره کالا. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setIsSavingItem(false);
     }
   };
 
@@ -489,24 +510,32 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveItemSubmit} className="space-y-4">
+            <form onSubmit={handleSaveItemSubmit} noValidate className="space-y-4">
+              {itemSaveError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                  {itemSaveError}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   {isPurchase ? 'انتخاب دسته‌بندی هزینه' : 'انتخاب دسته مربوطه'} <span className="text-rose-500">*</span>
                 </label>
                 <select
-                  required
                   value={editingItem.categoryId || ''}
                   onChange={(e) => {
                     const catObj = categories.find((c) => c.id === e.target.value);
                     setEditingItem({
                       ...editingItem,
                       categoryId: e.target.value,
-                      categoryName: catObj?.name || 'سایر',
+                      categoryName: catObj?.name || (isPurchase ? 'سایر هزینه‌ها' : 'سایر'),
                     });
                   }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden bg-white"
                 >
+                  {categories.length === 0 && (
+                    <option value="">(ابتدا یک دسته‌بندی ایجاد کنید)</option>
+                  )}
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -521,7 +550,6 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
                 </label>
                 <input
                   type="text"
-                  required
                   value={editingItem.name || ''}
                   onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
                   placeholder={
@@ -559,14 +587,13 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
                     type="number"
                     min="0"
                     step="1000"
-                    required
-                    value={editingItem.basePrice || 0}
+                    value={editingItem.basePrice ?? 0}
                     onChange={(e) =>
                       setEditingItem({ ...editingItem, basePrice: parseFloat(e.target.value) || 0 })
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                   />
-                  {editingItem.basePrice! > 0 && (
+                  {(editingItem.basePrice ?? 0) > 0 && (
                     <span className="text-[10px] text-amber-700 font-bold block mt-1">
                       {formatPersianPrice(editingItem.basePrice!)} تومان
                     </span>
@@ -584,12 +611,17 @@ export const ItemsCatalogView: React.FC<ItemsCatalogViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className={`flex items-center gap-1.5 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-xs ${
+                  disabled={isSavingItem}
+                  className={`flex items-center gap-1.5 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-xs transition-colors ${
                     isPurchase ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-amber-700 hover:bg-amber-800'
-                  }`}
+                  } ${isSavingItem ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
-                  <Check className="w-4 h-4" />
-                  ذخیره کالا
+                  {isSavingItem ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4" />
+                  )}
+                  {isSavingItem ? 'در حال ذخیره...' : 'ذخیره کالا'}
                 </button>
               </div>
             </form>

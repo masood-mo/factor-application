@@ -465,22 +465,20 @@ export async function savePurchaseCategory(category: Partial<Category>): Promise
   else list.push(catObj);
   setLocalCache('purchase_categories', list);
 
-  try {
-    await setDoc(doc(db, 'purchase_categories', id), catObj, { merge: true });
-  } catch {
-    // Offline mode
-  }
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'purchase_categories', id), sanitizeForFirestore(catObj), { merge: true });
+  });
+  syncToD1('purchase_categories', catObj);
   return catObj;
 }
 
 export async function deletePurchaseCategory(id: string): Promise<void> {
   const list = getLocalCache<Category[]>('purchase_categories', DEFAULT_PURCHASE_CATEGORIES).filter((c) => c.id !== id);
   setLocalCache('purchase_categories', list);
-  try {
+  syncToD1('purchase_categories', { id }, 'delete');
+  safeFirestoreOp(async () => {
     await deleteDoc(doc(db, 'purchase_categories', id));
-  } catch {
-    // Offline mode
-  }
+  });
 }
 
 // --- Purchase Item Operations ---
@@ -521,22 +519,20 @@ export async function savePurchaseItem(item: Partial<Item>): Promise<Item> {
   else list.push(itemObj);
   setLocalCache('purchase_items', list);
 
-  try {
-    await setDoc(doc(db, 'purchase_items', id), itemObj, { merge: true });
-  } catch {
-    // Offline mode
-  }
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'purchase_items', id), sanitizeForFirestore(itemObj), { merge: true });
+  });
+  syncToD1('purchase_items', itemObj);
   return itemObj;
 }
 
 export async function deletePurchaseItem(id: string): Promise<void> {
   const list = getLocalCache<Item[]>('purchase_items', DEFAULT_PURCHASE_ITEMS).filter((i) => i.id !== id);
   setLocalCache('purchase_items', list);
-  try {
+  syncToD1('purchase_items', { id }, 'delete');
+  safeFirestoreOp(async () => {
     await deleteDoc(doc(db, 'purchase_items', id));
-  } catch {
-    // Offline mode
-  }
+  });
 }
 
 // --- Guest Operations ---
@@ -1136,29 +1132,31 @@ export async function fetchPurchaseInvoices(): Promise<PurchaseInvoice[]> {
   const cached = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []);
   try {
     const q = query(collection(db, 'purchase_invoices'), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    const list: PurchaseInvoice[] = [];
-    snap.forEach((d) => {
-      const data = d.data();
-      const totalAmount = Number(data.totalPaid || data.totalAmount) || 0;
-      const payments = data.payments || [];
-      const totalPaidAmount = payments.length > 0 
-        ? payments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
-        : (data.paid ? totalAmount : 0);
-      const remainingBalance = Math.max(0, totalAmount - totalPaidAmount);
-      
-      list.push({
-        id: d.id,
-        ...data,
-        payments,
-        totalPaidAmount,
-        remainingBalance,
-        paid: (totalAmount > 0 && remainingBalance === 0) ? true : (data.paid ?? true)
-      } as PurchaseInvoice);
-    });
-    if (list.length > 0) {
-      setLocalCache('purchase_invoices', list);
-      return list;
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    if (snap && !snap.empty) {
+      const list: PurchaseInvoice[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        const totalAmount = Number(data.totalPaid || data.totalAmount) || 0;
+        const payments = data.payments || [];
+        const totalPaidAmount = payments.length > 0 
+          ? payments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+          : (data.paid ? totalAmount : 0);
+        const remainingBalance = Math.max(0, totalAmount - totalPaidAmount);
+        
+        list.push({
+          id: d.id,
+          ...data,
+          payments,
+          totalPaidAmount,
+          remainingBalance,
+          paid: (totalAmount > 0 && remainingBalance === 0) ? true : (data.paid ?? true)
+        } as PurchaseInvoice);
+      });
+      if (list.length > 0) {
+        setLocalCache('purchase_invoices', list);
+        return list;
+      }
     }
     const d1Data = await fetchFromD1<PurchaseInvoice>('purchase_invoices');
     if (d1Data && d1Data.length > 0) {
@@ -1186,6 +1184,22 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
   const remainingBalance = Math.max(0, totalAmount - totalPaidAmount);
   const isFullyPaid = (totalAmount > 0 && remainingBalance === 0) || (invoice.paid ?? true);
 
+  const cleanItems = (invoice.items || []).map((it, idx) => ({
+    id: it.id || `prow-${Date.now()}-${idx + 1}`,
+    rowNum: it.rowNum || idx + 1,
+    itemId: it.itemId || '',
+    itemName: it.itemName || '',
+    categoryId: it.categoryId || '',
+    categoryName: it.categoryName || '',
+    unit: it.unit || 'عدد',
+    quantity: Number(it.quantity) || 1,
+    unitPrice: Number(it.unitPrice) || 0,
+    totalPrice: Number(it.totalPrice) || 0,
+    discount: Number(it.discount) || 0,
+    paidAmount: Number(it.paidAmount) || 0,
+    description: it.description || ''
+  }));
+
   const invoiceObj: PurchaseInvoice = {
     id,
     serialNumber: invoice.serialNumber || `PUR-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1193,10 +1207,10 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
     vendorName: invoice.vendorName || '',
     vendorPhone: invoice.vendorPhone || '',
     notes: invoice.notes || '',
-    items: invoice.items || [],
-    totalAmount: invoice.totalAmount || 0,
-    totalDiscount: invoice.totalDiscount || 0,
-    totalPaid: invoice.totalPaid || 0,
+    items: cleanItems,
+    totalAmount: Number(invoice.totalAmount) || 0,
+    totalDiscount: Number(invoice.totalDiscount) || 0,
+    totalPaid: Number(invoice.totalPaid) || 0,
     payments,
     totalPaidAmount,
     remainingBalance,
@@ -1211,11 +1225,9 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
   else list.unshift(invoiceObj);
   setLocalCache('purchase_invoices', list);
 
-  try {
-    await setDoc(doc(db, 'purchase_invoices', id), invoiceObj, { merge: true });
-  } catch {
-    // Offline mode
-  }
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'purchase_invoices', id), sanitizeForFirestore(invoiceObj), { merge: true });
+  });
   syncToD1('purchase_invoices', invoiceObj);
   return invoiceObj;
 }
@@ -1224,11 +1236,9 @@ export async function deletePurchaseInvoice(id: string): Promise<void> {
   const list = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []).filter(i => i.id !== id);
   setLocalCache('purchase_invoices', list);
   syncToD1('purchase_invoices', { id }, 'delete');
-  try {
+  safeFirestoreOp(async () => {
     await deleteDoc(doc(db, 'purchase_invoices', id));
-  } catch {
-    // Offline mode
-  }
+  });
 }
 
 export async function togglePurchaseInvoicePaid(id: string, paid: boolean): Promise<void> {
@@ -1244,7 +1254,7 @@ export async function togglePurchaseInvoicePaid(id: string, paid: boolean): Prom
     setLocalCache('purchase_invoices', list);
   }
 
-  try {
+  safeFirestoreOp(async () => {
     const docRef = doc(db, 'purchase_invoices', id);
     const snap = await getDoc(docRef);
     if (snap.exists()) {
@@ -1257,7 +1267,5 @@ export async function togglePurchaseInvoicePaid(id: string, paid: boolean): Prom
         paymentDate: paid ? getCurrentJalaliDate() : ''
       });
     }
-  } catch {
-    // Offline mode
-  }
+  });
 }

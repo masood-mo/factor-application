@@ -206,3 +206,19 @@ export function generateNextInvoiceSerialNumber(existingSerialNumbers: string[],
   // Format with Persian numerals: F-۱۴۰۵-۰۰۰۱
   return `F-${toPersianDigits(yearEng)}-${toPersianDigits(seqStr)}`;
 }
+
+/**
+ * Normalizes Persian and Arabic text for robust searching and filtering
+ */
+export function normalizePersianText(str: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .replace(/[ي]/g, 'ی')
+    .replace(/[ك]/g, 'ک')
+    .replace(/[آأإٱ]/g, 'ا')
+    .replace(/[ة]/g, 'ه')
+    .replace(/\u200c/g, ' ')
+    .replace(/[\s\-_]+/g, ' ')
+    .trim();
+}

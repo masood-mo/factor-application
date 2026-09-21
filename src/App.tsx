@@ -247,6 +247,14 @@ export default function App() {
     return saved;
   };
 
+  // Auto-Create Item from Purchase Invoice (if user typed new item name)
+  const handleAutoCreatePurchaseItem = async (it: Partial<Item>): Promise<Item> => {
+    const saved = await savePurchaseItem(it);
+    const updated = await fetchPurchaseItems();
+    setPurchaseItems(updated);
+    return saved;
+  };
+
   // Handlers for Sales Invoices
   const handleSaveSalesInvoice = async (inv: Partial<SalesInvoice>): Promise<SalesInvoice> => {
     const saved = await saveSalesInvoice(inv);
@@ -294,6 +302,7 @@ export default function App() {
     const updated = await fetchPurchaseInvoices();
     setPurchaseInvoices(updated);
     setEditingPurchaseInvoice(null);
+    setActiveTab('purchase_invoices_list');
     return saved;
   };
 
@@ -439,6 +448,7 @@ export default function App() {
           <SalesInvoiceFormView
             settings={settings}
             existingItems={items}
+            categories={categories}
             existingGuests={guests}
             existingInvoices={salesInvoices}
             invoiceToEdit={editingSalesInvoice}
@@ -484,6 +494,7 @@ export default function App() {
             categories={purchaseCategories}
             invoiceToEdit={editingPurchaseInvoice}
             onSaveInvoice={handleSavePurchaseInvoice}
+            onAutoCreatePurchaseItem={handleAutoCreatePurchaseItem}
             onCancelEdit={
               editingPurchaseInvoice
                 ? () => {

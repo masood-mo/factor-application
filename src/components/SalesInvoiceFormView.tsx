@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   LodgeSettings,
   Item,
+  Category,
   SalesInvoice,
   SalesInvoiceItem,
   InvoicePayment,
   Guest
 } from '../types';
-import { getCurrentJalaliDate, generateNextInvoiceSerialNumber } from '../utils/persianDate';
+import { getCurrentJalaliDate, generateNextInvoiceSerialNumber, normalizePersianText } from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
 import { numberToWordsPersian, formatPersianPrice } from '../utils/numberToWords';
 import { VoiceInvoiceModal } from './VoiceInvoiceModal';
@@ -40,6 +41,7 @@ import {
 
 interface SalesInvoiceFormViewProps {
   settings: LodgeSettings;
+  categories?: Category[];
   existingItems: Item[];
   existingGuests?: Guest[];
   existingInvoices?: SalesInvoice[];
@@ -53,6 +55,7 @@ interface SalesInvoiceFormViewProps {
 
 export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   settings,
+  categories = [],
   existingItems,
   existingGuests = [],
   existingInvoices = [],
@@ -247,6 +250,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
     row.itemName = selected.name;
     row.unit = selected.unit || row.unit;
     row.basePrice = selected.basePrice || 0;
+    row.categoryId = selected.categoryId;
+    row.categoryName = selected.categoryName;
     row.isNewlyAddedToCatalog = false;
 
     newItems[index] = recalculateRow(row);
@@ -537,6 +542,45 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
     setSaving(true);
     try {
+      // Process items: auto-register newly typed items into catalog (Requirement 2)
+      const processedItems = [...items];
+      for (let i = 0; i < processedItems.length; i++) {
+        const row = processedItems[i];
+        if (!row.itemId && row.itemName.trim()) {
+          const trimmed = row.itemName.trim();
+          const existing = existingItems.find(
+            (ex) => normalizePersianText(ex.name) === normalizePersianText(trimmed)
+          );
+          if (existing) {
+            row.itemId = existing.id;
+            row.categoryId = existing.categoryId;
+            row.categoryName = existing.categoryName;
+          } else {
+            const catId = row.categoryId || (categories.length > 0 ? categories[0].id : '');
+            const catName = row.categoryName || (categories.find((c) => c.id === catId)?.name) || 'سایر خدمات و کالاها';
+            if (onAutoCreateItem) {
+              try {
+                const created = await onAutoCreateItem({
+                  name: trimmed,
+                  categoryId: catId,
+                  categoryName: catName,
+                  unit: row.unit || 'عدد',
+                  basePrice: Number(row.basePrice) || 0,
+                  type: 'SALES',
+                });
+                if (created?.id) {
+                  row.itemId = created.id;
+                  row.categoryId = catId;
+                  row.categoryName = catName;
+                }
+              } catch (err) {
+                console.warn('Could not auto create sales item:', err);
+              }
+            }
+          }
+        }
+      }
+
       const saved = await onSaveInvoice({
         id: invoiceToEdit?.id,
         serialNumber,
@@ -548,7 +592,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
         guestPhone: guestPhone.trim(),
         guestJob: guestJob.trim(),
         notes,
-        items,
+        items: processedItems,
         totalItemsAmount,
         totalDiscountAmount,
         totalTaxAmount,
@@ -862,13 +906,13 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
               </button>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+            <div className="overflow-x-auto border border-slate-200 rounded-2xl min-h-[380px] pb-32">
               <table className="w-full text-right text-xs">
                 <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
                     <th className="p-2.5 text-center w-10">#</th>
-                    <th className="p-2.5 min-w-[220px]">شرح کالا یا خدمت (با جستجوی خودکار)</th>
-                    <th className="p-2.5 w-24">واحد</th>
+                    <th className="p-2.5 min-w-[280px]">شرح کالا یا خدمت (با جستجوی خودکار)</th>
+                    <th className="p-2.5 w-28">واحد</th>
                     <th className="p-2.5 w-20 text-center">تعداد</th>
                     <th className="p-2.5 w-32">قیمت واحد (تومان)</th>
                     <th className="p-2.5 w-32">مبلغ کل (تومان)</th>
@@ -882,9 +926,9 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                     const rowLineTotal = (Math.max(0, Number(row.quantity) || 0)) * (Math.max(0, Number(row.basePrice) || 0));
                     const filteredItemSuggestions = row.itemName.trim()
                       ? existingItems.filter((it) =>
-                          it.name.toLowerCase().includes(row.itemName.trim().toLowerCase())
+                          normalizePersianText(it.name).includes(normalizePersianText(row.itemName.trim()))
                         )
-                      : [];
+                      : existingItems.slice(0, 8);
 
                     return (
                       <tr
@@ -904,75 +948,111 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                         </td>
                         
                         {/* Item Name with Autocomplete */}
-                        <td className="p-2 relative">
+                        <td className="p-2 relative min-w-[280px]">
                           <div className="flex flex-col gap-1">
-                            <input
-                              type="text"
-                              value={row.itemName}
-                              onChange={(e) => {
-                                handleItemChange(idx, 'itemName', e.target.value);
-                                setActiveItemSuggestIndex(idx);
-                              }}
-                              onFocus={() => setActiveItemSuggestIndex(idx)}
-                              onBlur={() => {
-                                setTimeout(() => {
-                                  setActiveItemSuggestIndex((current) => (current === idx ? null : current));
-                                }, 200);
-                              }}
-                              placeholder="تایپ نام کالا (انتخاب یا کالای جدید)..."
-                              className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-700 outline-hidden bg-white ${
-                                row.isNewlyAddedToCatalog
-                                  ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold'
-                                  : 'border-slate-300'
-                              }`}
-                              required
-                            />
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={row.itemName}
+                                onChange={(e) => {
+                                  handleItemChange(idx, 'itemName', e.target.value);
+                                  setActiveItemSuggestIndex(idx);
+                                }}
+                                onFocus={() => setActiveItemSuggestIndex(idx)}
+                                onBlur={() => {
+                                  setTimeout(() => {
+                                    setActiveItemSuggestIndex((current) => (current === idx ? null : current));
+                                  }, 250);
+                                }}
+                                placeholder="تایپ نام کالا (با جستجوی خودکار)..."
+                                className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-700 outline-hidden bg-white ${
+                                  row.isNewlyAddedToCatalog
+                                    ? 'border-amber-400 bg-amber-50/50 text-amber-950 font-bold'
+                                    : 'border-slate-300'
+                                }`}
+                                required
+                              />
+
+                              {/* Catalog Item Suggestions Dropdown */}
+                              {activeItemSuggestIndex === idx && filteredItemSuggestions.length > 0 && (
+                                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-amber-300 rounded-xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto">
+                                  <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-100 text-[10px] text-amber-900 font-bold flex items-center justify-between">
+                                    <span>کالاهای موجود در کاتالوگ فروش:</span>
+                                    <span className="text-[10px] text-slate-400 font-normal">کلیک جهت انتخاب سریع</span>
+                                  </div>
+                                  {filteredItemSuggestions.map((catIt) => (
+                                    <div
+                                      key={catIt.id}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        handleSelectAutocompleteItem(idx, catIt);
+                                      }}
+                                      className="px-3 py-2 hover:bg-amber-50 cursor-pointer flex items-center justify-between border-b border-slate-50 last:border-0 transition-colors"
+                                    >
+                                      <div>
+                                        <p className="text-xs font-bold text-slate-800">{catIt.name}</p>
+                                        <span className="text-[10px] text-slate-500">
+                                          دسته: {catIt.categoryName || 'عمومی'} | واحد: {catIt.unit || 'عدد'}
+                                        </span>
+                                      </div>
+                                      <span className="text-xs font-mono font-bold text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded">
+                                        {catIt.basePrice.toLocaleString('fa-IR')} ت
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
                             {row.itemId && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded w-fit">
-                                کاتالوگ
+                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
+                                ✓ کاتالوگ: {row.categoryName || 'فروش'}
                               </span>
                             )}
-                            {row.isNewlyAddedToCatalog && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-900 bg-amber-200/90 border border-amber-300 px-1.5 py-0.5 rounded-md font-bold w-fit">
-                                تازه‌افزوده به کاتالوگ
-                              </span>
+
+                            {/* If user typed a new item (not in catalog), display Category Selector immediately */}
+                            {row.itemName.trim() && !row.itemId && categories.length > 0 && (
+                              <div className="mt-1 p-1.5 bg-amber-50/90 border border-amber-200 rounded-lg flex flex-col gap-1">
+                                <span className="text-[10px] font-bold text-amber-900">
+                                  انتخاب دسته‌بندی کالا یا خدمات:
+                                </span>
+                                <select
+                                  value={row.categoryId || ''}
+                                  onChange={(e) => {
+                                    const cat = categories.find((c) => c.id === e.target.value);
+                                    handleItemChange(idx, 'categoryId', e.target.value);
+                                    handleItemChange(idx, 'categoryName', cat ? cat.name : '');
+                                  }}
+                                  className="w-full text-xs font-semibold text-slate-800 bg-white border border-amber-300 rounded-md px-2 py-1 outline-hidden focus:ring-1 focus:ring-amber-600"
+                                >
+                                  <option value="">-- انتخاب دسته‌بندی (کالای جدید فروش) --</option>
+                                  {categories.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
                             )}
                           </div>
-
-                          {/* Catalog Item Suggestions Dropdown */}
-                          {activeItemSuggestIndex === idx && filteredItemSuggestions.length > 0 && (
-                            <div className="absolute z-30 left-2 right-2 top-full mt-1 bg-white border border-amber-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-                              <div className="px-3 py-1 bg-amber-50/80 border-b border-amber-100 text-[10px] text-amber-900 font-bold flex items-center justify-between">
-                                <span>کالاهای موجود در کاتالوگ:</span>
-                                <span className="text-[10px] text-slate-400">کلیک برای درج خودکار</span>
-                              </div>
-                              {filteredItemSuggestions.map((catIt) => (
-                                <div
-                                  key={catIt.id}
-                                  onMouseDown={() => handleSelectAutocompleteItem(idx, catIt)}
-                                  className="px-3 py-2 hover:bg-amber-50 cursor-pointer flex items-center justify-between border-b border-slate-50 last:border-0 transition-colors"
-                                >
-                                  <div>
-                                    <p className="text-xs font-bold text-slate-800">{catIt.name}</p>
-                                    <span className="text-[10px] text-slate-500">واحد: {catIt.unit || 'عدد'}</span>
-                                  </div>
-                                  <span className="text-xs font-mono font-bold text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded">
-                                    {catIt.basePrice.toLocaleString('fa-IR')} ت
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </td>
 
                         {/* Unit */}
                         <td className="p-2">
-                          <input
-                            type="text"
+                          <select
                             value={row.unit}
                             onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center focus:ring-1 focus:ring-amber-700 outline-hidden bg-white"
-                          />
+                            className="w-full px-1.5 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-amber-700 outline-hidden bg-white font-medium text-center"
+                          >
+                            {settings.units.map((u) => (
+                              <option key={u} value={u}>
+                                {u}
+                              </option>
+                            ))}
+                            {row.unit && !settings.units.includes(row.unit) && (
+                              <option value={row.unit}>{row.unit}</option>
+                            )}
+                          </select>
                         </td>
 
                         {/* Quantity */}
