@@ -49,6 +49,11 @@ export function WagesListView({
   const totalPayroll = wagePayments.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
 
   const handleOpenNewWage = () => {
+    const PERSIAN_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+    const jDate = getCurrentJalaliDate().split('/');
+    const currentMonthIdx = parseInt(jDate[1], 10) - 1;
+    const currentPeriod = `${PERSIAN_MONTHS[currentMonthIdx] || 'ماه جاری'} ${jDate[0]}`;
+
     setEditingWage({
       employeeName: '',
       role: 'سرپرست پذیرش و خدمات',
@@ -58,7 +63,7 @@ export function WagesListView({
       type: 'SALARY',
       paymentMethod: 'CARD_TO_CARD',
       referenceNumber: '',
-      period: 'مرداد ۱۴۰۳',
+      period: currentPeriod,
       notes: '',
       paid: true
     });
@@ -72,7 +77,10 @@ export function WagesListView({
 
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingWage.employeeName || !editingWage.amount) return;
+    if (!editingWage.employeeName?.trim() || !editingWage.amount || editingWage.amount <= 0) {
+      alert('لطفاً نام همکار و مبلغ دستمزد را به درستی وارد کنید.');
+      return;
+    }
     try {
       setIsSaving(true);
       await onSaveWagePayment(editingWage);

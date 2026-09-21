@@ -153,20 +153,16 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
       setFormError('لطفاً نام فروشنده یا تأمین‌کننده را وارد کنید.');
       return;
     }
-    if (items.length === 0) {
+    const filledItems = items.filter((it) => it.itemName && it.itemName.trim().length > 0);
+    if (filledItems.length === 0) {
       setFormError('لطفاً حداقل یک ردیف کالا به فاکتور خرید اضافه کنید.');
-      return;
-    }
-    const emptyRowIdx = items.findIndex((it) => !it.itemName.trim());
-    if (emptyRowIdx !== -1) {
-      setFormError(`لطفاً نام کالا را در ردیف ${emptyRowIdx + 1} وارد کنید.`);
       return;
     }
 
     setSaving(true);
     try {
       // Process items: auto-save newly typed items into purchase items database (Requirement 5)
-      const processedItems = [...items];
+      const processedItems = [...filledItems];
       for (let i = 0; i < processedItems.length; i++) {
         const row = processedItems[i];
         if (!row.itemId && row.itemName.trim()) {

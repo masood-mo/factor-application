@@ -134,6 +134,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   );
 
   const [saving, setSaving] = useState<boolean>(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (invoiceToEdit) {
@@ -531,19 +532,25 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   // Submit Handler
   const handleSubmitInvoice = async (e: React.FormEvent, shouldPrintAfter: boolean = false) => {
     e.preventDefault();
+    setFormError(null);
+
     if (!guestName.trim()) {
-      alert(`لطفاً نام ${customerTitle} را وارد کنید.`);
+      setFormError(`لطفاً نام ${customerTitle} را وارد کنید.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (items.some((it) => !it.itemName.trim())) {
-      alert('لطفاً نام تمامی اقلام فاکتور را از لیست کاتالوگ یا به صورت دستی بنویسید.');
+
+    // Prune completely blank rows (no name)
+    const filledItems = items.filter((it) => it.itemName && it.itemName.trim().length > 0);
+    if (filledItems.length === 0) {
+      setFormError('لطفاً حداقل نام یک کالا یا خدمت را در جدول اقلام فاکتور وارد کنید.');
       return;
     }
 
     setSaving(true);
     try {
       // Process items: auto-register newly typed items into catalog (Requirement 2)
-      const processedItems = [...items];
+      const processedItems = [...filledItems];
       for (let i = 0; i < processedItems.length; i++) {
         const row = processedItems[i];
         if (!row.itemId && row.itemName.trim()) {
@@ -583,8 +590,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
       const saved = await onSaveInvoice({
         id: invoiceToEdit?.id,
-        serialNumber,
-        date,
+        serialNumber: serialNumber.trim() || `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+        date: date || getCurrentJalaliDate(),
         status,
         invoiceKind: status,
         guestId,
@@ -612,7 +619,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
       }
     } catch (err) {
       console.error('Error saving invoice:', err);
-      alert('خطا در ثبت فاکتور. لطفاً دوباره تلاش کنید.');
+      setFormError('خطا در ثبت فاکتور. لطفاً مجدداً بررسی فرمایید.');
     } finally {
       setSaving(false);
     }
@@ -652,7 +659,22 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-3 sm:px-6">
-      <form onSubmit={(e) => handleSubmitInvoice(e, false)} className="space-y-6">
+      <form onSubmit={(e) => handleSubmitInvoice(e, false)} noValidate className="space-y-6">
+        {formError && (
+          <div className="p-4 bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs font-bold rounded-2xl flex items-center justify-between shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚠️</span>
+              <span>{formError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormError(null)}
+              className="text-rose-500 hover:text-rose-700 font-bold px-2 py-1"
+            >
+              متوجه شدم
+            </button>
+          </div>
+        )}
         
         {/* Main Invoice Card */}
         <div className="bg-white rounded-3xl border border-amber-900/15 shadow-md overflow-hidden">
@@ -1341,6 +1363,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
               {/* Final Submit Button */}
               <button
                 type="submit"
+                onClick={(e) => handleSubmitInvoice(e, false)}
                 disabled={saving}
                 className="flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-lg transition-all cursor-pointer disabled:opacity-50 ring-2 ring-amber-400/20"
               >

@@ -152,6 +152,7 @@ export interface WagePayment {
   notes?: string;
   paid: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Investor {
@@ -205,6 +206,7 @@ export interface SalesInvoice {
   paid: boolean;
   paymentDate?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PurchaseInvoiceItem {
@@ -240,6 +242,7 @@ export interface PurchaseInvoice {
   paid: boolean;
   paymentDate?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type ActiveTab = 
