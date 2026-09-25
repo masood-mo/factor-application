@@ -602,6 +602,7 @@ export default function App() {
             purchaseInvoices={purchaseInvoices}
             wagePayments={wagePayments}
             categories={categories}
+            items={items}
             purchaseCategories={purchaseCategories}
             purchaseItems={purchaseItems}
             investorPayouts={investorPayouts}

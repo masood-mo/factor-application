@@ -4,7 +4,65 @@ import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate
 import { savePurchaseItem } from '../services/dbService';
 import { PersianDatePicker } from './PersianDatePicker';
 import { formatPersianPrice } from '../utils/numberToWords';
-import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText, AlertCircle, X } from 'lucide-react';
+
+export function detectPurchaseCategory(
+  itemName: string,
+  categories: Category[]
+): Category | null {
+  const norm = normalizePersianText(itemName || '');
+  if (!norm) return null;
+
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    // Bills & Utilities & Internet
+    if (
+      (cName.includes('قبض') || cName.includes('اینترنت') || cName.includes('انرژی') || cat.id === 'pcat-2' || cat.id === 'b-pcat-2') &&
+      /قبض|آب|اب|برق|گاز|اینترنت|تلفن|مخابرات|وای‌فای|وای فای|شارژ|بسته اینترنت|سیمکارت|سیم کارت/.test(norm)
+    ) {
+      return cat;
+    }
+    // Repairs & Maintenance
+    if (
+      (cName.includes('تعمیر') || cName.includes('نگهداری') || cName.includes('تاسیسات') || cat.id === 'pcat-3' || cat.id === 'b-pcat-3') &&
+      /تعمیر|سرویس|نگهداری|رنگ|لوله|سیم‌کشی|سیم کشی|شیرآلات|بنا|ابزار|تاسیسات|کاهگل|مرمت|ساختمانی|کلید|پریز/.test(norm)
+    ) {
+      return cat;
+    }
+    // Advertising & Environment
+    if (
+      (cName.includes('تبلیغ') || cName.includes('محیط') || cat.id === 'pcat-4' || cat.id === 'b-pcat-4') &&
+      /تبلیغ|چاپ|بنر|کاتالوگ|بروشور|عکاسی|فیلمبرداری|محیط زیست|فضای سبز|پسماند|زباله|تراکت/.test(norm)
+    ) {
+      return cat;
+    }
+    // Equipment & Operating Supplies
+    if (
+      (cName.includes('تجهیزات') || cName.includes('ملزومات') || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
+      /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(norm)
+    ) {
+      return cat;
+    }
+    // Food & Groceries & Hygiene
+    if (
+      (cName.includes('غذایی') || cName.includes('بهداشتی') || cat.id === 'pcat-1' || cat.id === 'b-pcat-1') &&
+      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات/.test(norm)
+    ) {
+      return cat;
+    }
+  }
+
+  // Generic keyword match
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    const keywords = cName.split(/[\s،,و/]+/).filter((k) => k.length > 2);
+    if (keywords.some((k) => norm.includes(k))) {
+      return cat;
+    }
+  }
+
+  return null;
+}
 
 interface PurchaseInvoiceFormViewProps {
   settings: LodgeSettings;
@@ -54,6 +112,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   const [saving, setSaving] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [errorModal, setErrorModal] = useState<{ title: string; message: string; fieldId?: string } | null>(null);
 
   useEffect(() => {
     if (invoiceToEdit) {
@@ -90,6 +149,14 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
       row.itemName = value;
       // Disconnect itemId if user changed or typed a custom item name
       row.itemId = undefined;
+      // Auto-detect category on typing if not explicitly set
+      if (!row.categoryId) {
+        const detected = detectPurchaseCategory(value, categories);
+        if (detected) {
+          row.categoryId = detected.id;
+          row.categoryName = detected.name;
+        }
+      }
     } else {
       (row as any)[field] = value;
     }
@@ -133,6 +200,10 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   const handleRemoveRow = (index: number) => {
     if (items.length <= 1) {
       setFormError('فاکتور خرید باید حداقل شامل یک ردیف باشد.');
+      setErrorModal({
+        title: 'حداقل تعداد ردیف',
+        message: 'فاکتور خرید باید حداقل شامل یک ردیف کالا یا هزینه باشد.'
+      });
       return;
     }
     const updated = items.filter((_, i) => i !== index).map((row, i) => ({ ...row, rowNum: i + 1 }));
@@ -150,12 +221,23 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
     setFormSuccess(null);
 
     if (!vendorName.trim()) {
-      setFormError('لطفاً نام فروشنده یا تأمین‌کننده را وارد کنید.');
+      const msg = 'لطفاً نام فروشنده یا تأمین‌کننده را وارد کنید.';
+      setFormError(msg);
+      setErrorModal({
+        title: 'نام فروشنده وارد نشده است',
+        message: msg,
+        fieldId: 'vendorNameInput'
+      });
       return;
     }
     const filledItems = items.filter((it) => it.itemName && it.itemName.trim().length > 0);
     if (filledItems.length === 0) {
-      setFormError('لطفاً حداقل یک ردیف کالا به فاکتور خرید اضافه کنید.');
+      const msg = 'لطفاً حداقل یک ردیف کالا یا هزینه به فاکتور خرید اضافه کنید.';
+      setFormError(msg);
+      setErrorModal({
+        title: 'جدول اقلام خالی است',
+        message: msg
+      });
       return;
     }
 
@@ -175,8 +257,9 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
             row.categoryId = existing.categoryId;
             row.categoryName = existing.categoryName;
           } else {
-            const catId = row.categoryId || (categories.length > 0 ? categories[0].id : '');
-            const catName = row.categoryName || (categories.find((c) => c.id === catId)?.name) || 'سایر هزینه‌ها';
+            const detected = detectPurchaseCategory(trimmed, categories);
+            const catId = row.categoryId || detected?.id || (categories.length > 0 ? categories[0].id : '');
+            const catName = row.categoryName || detected?.name || (categories.find((c) => c.id === catId)?.name) || 'سایر هزینه‌ها';
             try {
               let savedItem: Item | null = null;
               if (onAutoCreatePurchaseItem) {
@@ -226,7 +309,12 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
       setFormSuccess(invoiceToEdit ? 'فاکتور خرید با موفقیت بروزرسانی شد.' : 'فاکتور خرید با موفقیت ثبت شد.');
     } catch (err) {
       console.error(err);
-      setFormError('خطا در ثبت فاکتور خرید. لطفاً مجدداً بررسی فرمایید.');
+      const msg = 'خطا در ثبت فاکتور خرید. لطفاً مجدداً بررسی فرمایید.';
+      setFormError(msg);
+      setErrorModal({
+        title: 'خطا در ذخیره‌سازی',
+        message: msg
+      });
     } finally {
       setSaving(false);
     }
@@ -298,17 +386,30 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
           {/* Vendor Details */}
           <div className="p-5 bg-emerald-50/40 border-b border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
+              <label htmlFor="vendorNameInput" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
                 <Store className="w-3.5 h-3.5 text-emerald-700" />
                 نام فروشنده / تامین‌کننده <span className="text-rose-500">*</span>
               </label>
               <input
+                id="vendorNameInput"
                 type="text"
                 value={vendorName}
-                onChange={(e) => setVendorName(e.target.value)}
-                placeholder="مثال: فروشگاه مواد غذایی نمونه / صنایع دستی اصفهان"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                onChange={(e) => {
+                  setVendorName(e.target.value);
+                  if (formError && e.target.value.trim()) setFormError(null);
+                }}
+                placeholder="مثال: فروشگاه مواد غذایی نمونه / اداره برق و گاز / اینترنت مخابرات"
+                className={`w-full px-3 py-2 bg-white border rounded-xl text-xs outline-hidden transition-all ${
+                  formError && !vendorName.trim()
+                    ? 'border-rose-400 ring-2 ring-rose-200 bg-rose-50/30'
+                    : 'border-slate-300 focus:ring-2 focus:ring-emerald-500'
+                }`}
               />
+              {formError && !vendorName.trim() && (
+                <span className="text-[11px] font-bold text-rose-600 mt-1 block">
+                  ⚠️ نام فروشنده الزامی است
+                </span>
+              )}
             </div>
 
             <div>
@@ -587,6 +688,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
               <button
                 type="submit"
+                onClick={(e) => handleSubmit(e)}
                 disabled={saving}
                 className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 py-2 rounded-xl text-xs shadow-sm transition-all cursor-pointer disabled:opacity-50"
               >
@@ -597,6 +699,38 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
           </div>
         </div>
       </form>
+
+      {/* Error Popup Modal (Requested Requirement) */}
+      {errorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-rose-300 text-center animate-in fade-in zoom-in-95">
+            <div className="w-14 h-14 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-200 shadow-xs">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-black text-slate-900 mb-2">{errorModal.title}</h3>
+            <p className="text-xs font-semibold text-rose-800 bg-rose-50 border border-rose-200 rounded-2xl p-3.5 mb-5 leading-relaxed">
+              {errorModal.message}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const fid = errorModal.fieldId;
+                setErrorModal(null);
+                if (fid) {
+                  setTimeout(() => {
+                    const el = document.getElementById(fid);
+                    el?.focus();
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 100);
+                }
+              }}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
+            >
+              متوجه شدم و اصلاح می‌کنم
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

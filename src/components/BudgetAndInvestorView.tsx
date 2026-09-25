@@ -19,6 +19,8 @@ import {
 import {
   SalesInvoice,
   PurchaseInvoice,
+  SalesInvoiceItem,
+  PurchaseInvoiceItem,
   WagePayment,
   Category,
   Item,
@@ -33,9 +35,186 @@ import {
   getCurrentJalaliDate,
   getFirstDayOfMonthJalali,
   getLastDayOfMonthJalali,
-  isDateInRange
+  isDateInRange,
+  normalizePersianText
 } from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
+
+export function resolvePurchaseCategory(
+  item: PurchaseInvoiceItem,
+  categories: Category[],
+  purchaseCatalogItems: Item[] = []
+): Category | null {
+  const normItemName = normalizePersianText(item.itemName || '');
+  const normCatName = normalizePersianText(item.categoryName || '');
+
+  // 1. High-priority keyword heuristics on item name
+  // This guarantees that "قبض برق" or "قبض آب" is ALWAYS categorized under "قبض و اینترنت"
+  // even if an invoice row had an incorrect default category id!
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    // Utility bills & internet
+    if (
+      (cName.includes('قبض') || cName.includes('اینترنت') || cName.includes('انرژی') || cat.id === 'pcat-2' || cat.id === 'b-pcat-2') &&
+      /قبض|آب|اب|برق|گاز|اینترنت|تلفن|مخابرات|وای‌فای|وای فای|شارژ|بسته اینترنت|سیمکارت|سیم کارت/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Repairs & Maintenance
+    if (
+      (cName.includes('تعمیر') || cName.includes('نگهداری') || cName.includes('تاسیسات') || cat.id === 'pcat-3' || cat.id === 'b-pcat-3') &&
+      /تعمیر|سرویس|نگهداری|رنگ|لوله|سیم‌کشی|سیم کشی|شیرآلات|بنا|ابزار|تاسیسات|کاهگل|مرمت|ساختمانی|کلید|پریز/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Advertising & Environment
+    if (
+      (cName.includes('تبلیغ') || cName.includes('محیط') || cat.id === 'pcat-4' || cat.id === 'b-pcat-4') &&
+      /تبلیغ|چاپ|بنر|کاتالوگ|بروشور|عکاسی|فیلمبرداری|محیط زیست|فضای سبز|پسماند|زباله|تراکت/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Equipment & Operating Supplies
+    if (
+      (cName.includes('تجهیزات') || cName.includes('ملزومات') || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
+      /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Food & Groceries & Hygiene
+    if (
+      (cName.includes('غذایی') || cName.includes('بهداشتی') || cat.id === 'pcat-1' || cat.id === 'b-pcat-1') &&
+      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات/.test(normItemName)
+    ) {
+      return cat;
+    }
+  }
+
+  // 2. Direct categoryId match (handling b-pcat- prefix and standard ids)
+  if (item.categoryId) {
+    const rawId = item.categoryId;
+    const strippedId = rawId.replace(/^b-pcat-/, '');
+    const found = categories.find((c) => c.id === rawId || c.id === strippedId || `b-pcat-${c.id}` === rawId);
+    if (found) return found;
+  }
+
+  // 3. Catalog Item match
+  if (item.itemId) {
+    const pItem = purchaseCatalogItems.find((p) => p.id === item.itemId);
+    if (pItem?.categoryId) {
+      const stripped = pItem.categoryId.replace(/^b-pcat-/, '');
+      const found = categories.find((c) => c.id === pItem.categoryId || c.id === stripped);
+      if (found) return found;
+    }
+    if (pItem?.categoryName) {
+      const pcn = normalizePersianText(pItem.categoryName);
+      const found = categories.find((c) => normalizePersianText(c.name) === pcn);
+      if (found) return found;
+    }
+  }
+
+  // 4. Direct categoryName match
+  if (normCatName) {
+    const found = categories.find((c) => {
+      const cn = normalizePersianText(c.name);
+      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
+    });
+    if (found) return found;
+  }
+
+  // 5. Keyword search in category names
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    const keywords = cName.split(/[\s،,و/]+/).filter((k) => k.length > 2);
+    if (keywords.some((k) => normItemName.includes(k))) {
+      return cat;
+    }
+  }
+
+  return null;
+}
+
+export function resolveSalesCategory(
+  item: SalesInvoiceItem,
+  categories: Category[],
+  salesCatalogItems: Item[] = []
+): Category | null {
+  const normItemName = normalizePersianText(item.itemName || '');
+  const normCatName = normalizePersianText(item.categoryName || '');
+
+  // 1. Keyword matching for known sales domains
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    // Accommodation & Breakfast
+    if (
+      (cName.includes('اقامت') || cName.includes('صبحانه') || cat.id === 'cat-1') &&
+      /اقامت|اتاق|سوئیت|شاه‌نشین|شاه نشین|ترنج|دربست|حیاط|صبحانه|اسکان|رزرو|تخت|نفر اضافه/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Restaurant & Beverages & Food
+    if (
+      (cName.includes('رستوران') || cName.includes('نوشیدنی') || cName.includes('غذا') || cat.id === 'cat-2') &&
+      /دیزی|غذا|کباب|شامی|قرمساق|چای|شربت|دمنوش|پذیرایی|دوغ|ترشی|ناهار|شام|شام محلی|سینی|کیک|قهوه/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Handcrafts & Rosewater & Souvenirs
+    if (
+      (cName.includes('دست‌آفرید') || cName.includes('دست افرید') || cName.includes('صنایع') || cName.includes('سوغات') || cat.id === 'cat-3') &&
+      /گلاب|عرق|عرقیات|نعناع|نعنا|بیدمشک|صنایع|صنایع دستی|گلیم|دست‌آفرید|دست افرید|سوغات|کوزه|سفال/.test(normItemName)
+    ) {
+      return cat;
+    }
+    // Tours & Eco-tourism experiences
+    if (
+      (cName.includes('تور') || cName.includes('بوم‌گردی') || cName.includes('تجارب') || cat.id === 'cat-4') &&
+      /تور|کویر|باغ|باغ‌گردی|رصد|ستارگان|گشت|راهنما|دوچرخه|عکاسی/.test(normItemName)
+    ) {
+      return cat;
+    }
+  }
+
+  // 2. Direct categoryId match
+  if (item.categoryId) {
+    const found = categories.find((c) => c.id === item.categoryId);
+    if (found) return found;
+  }
+
+  // 3. Catalog Item match
+  if (item.itemId) {
+    const sItem = salesCatalogItems.find((s) => s.id === item.itemId);
+    if (sItem?.categoryId) {
+      const found = categories.find((c) => c.id === sItem.categoryId);
+      if (found) return found;
+    }
+    if (sItem?.categoryName) {
+      const scn = normalizePersianText(sItem.categoryName);
+      const found = categories.find((c) => normalizePersianText(c.name) === scn);
+      if (found) return found;
+    }
+  }
+
+  // 4. Direct categoryName match
+  if (normCatName) {
+    const found = categories.find((c) => {
+      const cn = normalizePersianText(c.name);
+      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
+    });
+    if (found) return found;
+  }
+
+  // 5. Keyword match from category name words
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    const keywords = cName.split(/[\s،,و/]+/).filter((k) => k.length > 2);
+    if (keywords.some((k) => normItemName.includes(k))) {
+      return cat;
+    }
+  }
+
+  return null;
+}
 
 interface BudgetAndInvestorViewProps {
   salesInvoices: SalesInvoice[];
@@ -44,6 +223,7 @@ interface BudgetAndInvestorViewProps {
   categories: Category[];
   purchaseCategories?: Category[];
   purchaseItems?: Item[];
+  items?: Item[];
   investorPayouts?: InvestorPayout[];
   investors?: Investor[];
   settings: LodgeSettings;
@@ -56,6 +236,7 @@ export function BudgetAndInvestorView({
   categories,
   purchaseCategories = [],
   purchaseItems = [],
+  items = [],
   investorPayouts = [],
   investors = [],
   settings
@@ -108,27 +289,28 @@ export function BudgetAndInvestorView({
   const inRangePurchases = purchaseInvoices.filter((inv) => isDateInRange(inv.date, startDate, endDate));
   const inRangeWages = wagePayments.filter((w) => isDateInRange(w.date, startDate, endDate));
 
-  // Calculate Total Sales Revenue by Category
+  // Calculate Total Sales Revenue by Category and Investor Eligible Revenue
   const salesByCategory: Record<string, number> = {};
   categories.forEach((cat) => (salesByCategory[cat.id] = 0));
   salesByCategory['other'] = 0;
 
+  let investorEligibleRevenue = 0;
+  let investorExemptRevenue = 0;
+
   inRangeSales.forEach((inv) => {
-    inv.items.forEach((item) => {
-      // Find item's category if possible
-      const itemAmount = item.payableAmount || item.totalPrice || 0;
-      // Default to matching or first category
-      let matchedCatId = 'other';
-      if (item.itemName.includes('اقامت') || item.itemName.includes('اتاق') || item.itemName.includes('سوئیت')) {
-        matchedCatId = 'cat-1';
-      } else if (item.itemName.includes('دیزی') || item.itemName.includes('غذا') || item.itemName.includes('کباب') || item.itemName.includes('چای')) {
-        matchedCatId = 'cat-2';
-      } else if (item.itemName.includes('گلاب') || item.itemName.includes('عرق') || item.itemName.includes('صنایع') || item.itemName.includes('گلیم')) {
-        matchedCatId = 'cat-3';
-      } else if (item.itemName.includes('تور') || item.itemName.includes('کویر') || item.itemName.includes('گشت')) {
-        matchedCatId = 'cat-4';
+    (inv.items || []).forEach((item) => {
+      const itemAmount = Number(item.payableAmount ?? item.totalPrice) || 0;
+      const matchedCat = resolveSalesCategory(item, categories, items);
+      const catId = matchedCat ? matchedCat.id : 'other';
+      salesByCategory[catId] = (salesByCategory[catId] || 0) + itemAmount;
+
+      // Check exemption dynamically based on matched category id
+      const isExempt = matchedCat ? investorExemptCategoryIds.includes(matchedCat.id) : false;
+      if (isExempt) {
+        investorExemptRevenue += itemAmount;
+      } else {
+        investorEligibleRevenue += itemAmount;
       }
-      salesByCategory[matchedCatId] = (salesByCategory[matchedCatId] || 0) + itemAmount;
     });
   });
 
@@ -172,83 +354,18 @@ export function BudgetAndInvestorView({
     categorySpentMap[cat.id] = 0;
   });
 
-  inRangePurchases.forEach((inv) => {
-    (inv.items || []).forEach((item) => {
-      const amount = Number(item.paidAmount || item.totalPrice) || 0;
-      let matchedCatId: string | null = null;
-
-      // 1. Check direct categoryId match
-      if (item.categoryId && categorySpentMap[item.categoryId] !== undefined) {
-        matchedCatId = item.categoryId;
-      }
-      // 2. Check catalog item match
-      if (!matchedCatId && item.itemId) {
-        const pItem = purchaseItems.find((p) => p.id === item.itemId);
-        if (pItem?.categoryId && categorySpentMap[pItem.categoryId] !== undefined) {
-          matchedCatId = pItem.categoryId;
-        }
-      }
-      // 3. Check direct categoryName match
-      if (!matchedCatId && item.categoryName) {
-        const found = effectivePurchaseCategories.find(
-          (c) => c.name.trim().toLowerCase() === item.categoryName!.trim().toLowerCase()
-        );
-        if (found) matchedCatId = found.id;
-      }
-      // 4. Keyword heuristic matching if no explicit category
-      if (!matchedCatId) {
-        const name = (item.itemName || '').toLowerCase();
-        for (const cat of effectivePurchaseCategories) {
-          const cName = cat.name.toLowerCase();
-          if (
-            (cName.includes('غذایی') || cName.includes('بهداشتی')) &&
-            /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات/.test(
-              name
-            )
-          ) {
-            matchedCatId = cat.id;
-            break;
-          } else if (
-            (cName.includes('قبض') || cName.includes('اینترنت')) &&
-            /قبض|آب|برق|گاز|اینترنت|تلفن|مخابرات|وای‌فای|شارژ/.test(name)
-          ) {
-            matchedCatId = cat.id;
-            break;
-          } else if (
-            (cName.includes('تعمیر') || cName.includes('نگهداری')) &&
-            /تعمیر|سرویس|نگهداری|رنگ|لوله|سیم‌کشی|شیرآلات|بنا|ابزار|تاسیسات|کاهگل|مرمت/.test(name)
-          ) {
-            matchedCatId = cat.id;
-            break;
-          } else if (
-            (cName.includes('تبلیغ') || cName.includes('محیط')) &&
-            /تبلیغ|چاپ|بنر|کاتالوگ|بروشور|عکاسی|فیلمبرداری|محیط زیست|فضای سبز|پسماند/.test(name)
-          ) {
-            matchedCatId = cat.id;
-            break;
-          } else if (
-            (cName.includes('تجهیزات') || cName.includes('ملزومات')) &&
-            /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ/.test(name)
-          ) {
-            matchedCatId = cat.id;
-            break;
-          }
-        }
-      }
-
-      if (matchedCatId) {
-        categorySpentMap[matchedCatId] = (categorySpentMap[matchedCatId] || 0) + amount;
-        matchedPurchaseItemIds.add(item.id);
-      }
-    });
-  });
-
-  // Calculate any unmatched purchase amounts
   let unmatchedPurchasesSpent = 0;
+
   inRangePurchases.forEach((inv) => {
     (inv.items || []).forEach((item) => {
-      if (!matchedPurchaseItemIds.has(item.id)) {
-        unmatchedPurchasesSpent += Number(item.paidAmount || item.totalPrice) || 0;
+      const amount = Number(item.paidAmount ?? item.totalPrice) || 0;
+      const matchedCat = resolvePurchaseCategory(item, effectivePurchaseCategories, purchaseItems);
+
+      if (matchedCat) {
+        categorySpentMap[matchedCat.id] = (categorySpentMap[matchedCat.id] || 0) + amount;
+        matchedPurchaseItemIds.add(item.id);
+      } else {
+        unmatchedPurchasesSpent += amount;
       }
     });
   });
@@ -280,7 +397,11 @@ export function BudgetAndInvestorView({
   // 2. Purchase Category rows
   const purchaseCategoryRowsCalculated = effectivePurchaseCategories.map((cat) => {
     const catConfig = configRows.find(
-      (r) => (r.purchaseCategoryId && r.purchaseCategoryId === cat.id) || r.name.trim() === cat.name.trim()
+      (r) =>
+        (r.purchaseCategoryId && (r.purchaseCategoryId === cat.id || r.purchaseCategoryId === cat.id.replace(/^b-pcat-/, ''))) ||
+        r.id === cat.id ||
+        r.id === `b-pcat-${cat.id}` ||
+        normalizePersianText(r.name) === normalizePersianText(cat.name)
     );
     let defaultPct = 10;
     if (cat.name.includes('غذایی') || cat.name.includes('بهداشتی')) defaultPct = 25;
@@ -309,24 +430,6 @@ export function BudgetAndInvestorView({
   });
 
   // Calculate Investor Profit Amount
-  let investorEligibleRevenue = 0;
-  inRangeSales.forEach((inv) => {
-    inv.items.forEach((item) => {
-      let isExempt = false;
-      if (
-        investorExemptCategoryIds.includes('cat-3') &&
-        (item.itemName.includes('گلاب') ||
-          item.itemName.includes('دست‌آفرید') ||
-          item.itemName.includes('گلیم') ||
-          item.itemName.includes('صنایع دستی'))
-      ) {
-        isExempt = true;
-      }
-      if (!isExempt) {
-        investorEligibleRevenue += item.payableAmount || item.totalPrice || 0;
-      }
-    });
-  });
   const investorEligibleExpenses = totalInScopeExpenses;
   const investorNetBaseProfit = Math.max(0, investorEligibleRevenue - investorEligibleExpenses);
   const investorShareAmount = (investorNetBaseProfit * investorSharePercent) / 100;
@@ -696,35 +799,66 @@ export function BudgetAndInvestorView({
           </div>
         </div>
 
-        {/* Exempt Category Toggle Buttons */}
-        <div>
-          <span className="text-xs font-bold text-slate-700 mb-2 block">
-            دسته‌بندی‌های درآمدی معاف از محاسبه سود سرمایه‌گذار (مثلاً دست‌آفرید و صنایع دستی):
-          </span>
-          <div className="flex flex-wrap gap-2">
+        {/* Exempt Category Toggle & Revenue Breakdown */}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800">
+              تعیین دسته‌بندی‌های درآمدی مشمول یا معاف از محاسبه سود سرمایه‌گذار:
+            </span>
+            <span className="text-[11px] text-slate-500">
+              روی هر دسته کلیک کنید تا آن را معاف یا مشمول سود کنید
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             {categories.map((cat) => {
               const isExempt = investorExemptCategoryIds.includes(cat.id);
+              const catRevenue = salesByCategory[cat.id] || 0;
+              const catShareOfTotal = totalInScopeSalesRevenue > 0
+                ? Math.round((catRevenue / totalInScopeSalesRevenue) * 100)
+                : 0;
+
               return (
                 <button
                   key={cat.id}
+                  type="button"
                   onClick={() => toggleInvestorExemptCategory(cat.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                  className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-2xs ${
                     isExempt
-                      ? 'bg-rose-50 text-rose-800 border-rose-300'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      ? 'bg-rose-50/70 border-rose-300 hover:bg-rose-100/60'
+                      : 'bg-emerald-50/70 border-emerald-300 hover:bg-emerald-100/60'
                   }`}
                 >
-                  {isExempt ? (
-                    <>
-                      <Square className="w-3.5 h-3.5 text-rose-600" />
-                      <span>{cat.name} (معاف از سود سرمایه‌گذار)</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>{cat.name} (مشمول محاسبه سود)</span>
-                    </>
-                  )}
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-bold text-xs text-slate-900">{cat.name}</span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        isExempt
+                          ? 'bg-rose-200 text-rose-800'
+                          : 'bg-emerald-200 text-emerald-800'
+                      }`}
+                    >
+                      {isExempt ? (
+                        <>
+                          <Square className="w-3 h-3 text-rose-700" />
+                          معاف از سود
+                        </>
+                      ) : (
+                        <>
+                          <CheckSquare className="w-3 h-3 text-emerald-700" />
+                          مشمول سود
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-baseline justify-between w-full pt-1 border-t border-slate-200/60">
+                    <span className="text-[11px] text-slate-500">فروش این بازه:</span>
+                    <span className="text-xs font-mono font-bold text-slate-800">
+                      {formatPersianPrice(catRevenue)} تومان
+                      <span className="text-[10px] text-slate-400 font-normal mr-1">({catShareOfTotal}٪)</span>
+                    </span>
+                  </div>
                 </button>
               );
             })}
@@ -732,33 +866,51 @@ export function BudgetAndInvestorView({
         </div>
 
         {/* Calculation Summary Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
           <div>
-            <span className="text-[11px] text-slate-500 font-semibold">درآمد مشمول سرمایه‌گذار</span>
+            <span className="text-[11px] text-slate-500 font-semibold">کل فروش ناخالص در بازه</span>
             <p className="text-base font-bold text-slate-900 font-mono mt-1">
-              {formatPersianPrice(investorEligibleRevenue)} تومان
+              {formatPersianPrice(totalInScopeSalesRevenue)} تومان
             </p>
+            {investorExemptRevenue > 0 && (
+              <span className="text-[10px] text-rose-600 block mt-0.5 font-medium">
+                معاف شده: {formatPersianPrice(investorExemptRevenue)} تومان
+              </span>
+            )}
           </div>
 
           <div>
-            <span className="text-[11px] text-slate-500 font-semibold">هزینه‌های کسر شده</span>
+            <span className="text-[11px] text-slate-500 font-semibold">درآمد خالص مشمول سرمایه‌گذار</span>
+            <p className="text-base font-bold text-emerald-700 font-mono mt-1">
+              {formatPersianPrice(investorEligibleRevenue)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              مبنای محاسبه سود
+            </span>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-slate-500 font-semibold">هزینه‌های کسر شده (خرید و دستمزد)</span>
             <p className="text-base font-bold text-rose-700 font-mono mt-1">
               {formatPersianPrice(investorEligibleExpenses)} تومان
             </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">
+              هزینه‌های جاری اقامتگاه
+            </span>
           </div>
 
-          <div>
-            <span className="text-[11px] text-slate-500 font-semibold">پایه سود خالص قابل تقسیم</span>
-            <p className="text-base font-bold text-slate-900 font-mono mt-1">
-              {formatPersianPrice(investorNetBaseProfit)} تومان
-            </p>
-          </div>
-
-          <div className="bg-amber-100/70 p-3 rounded-xl border border-amber-300">
-            <span className="text-[11px] text-amber-900 font-bold">مبلغ سهم سود سرمایه‌گذار ({investorSharePercent}٪)</span>
-            <p className="text-lg font-black text-amber-950 font-mono mt-0.5">
+          <div className="bg-amber-100/80 p-3.5 rounded-xl border border-amber-300 flex flex-col justify-between">
+            <span className="text-[11px] text-amber-900 font-bold">
+              سهم سود محاسبه شده سرمایه‌گذار ({investorSharePercent}٪)
+            </span>
+            <p className="text-lg font-black text-amber-950 font-mono mt-1">
               {formatPersianPrice(investorShareAmount)} تومان
             </p>
+            {totalInvestorPayoutsPaid > 0 && (
+              <span className="text-[10px] text-amber-800 font-medium block mt-1 pt-1 border-t border-amber-300">
+                پرداخت شده: {formatPersianPrice(totalInvestorPayoutsPaid)} | مانده: {formatPersianPrice(investorShareAmount - totalInvestorPayoutsPaid)} تومان
+              </span>
+            )}
           </div>
         </div>
 
