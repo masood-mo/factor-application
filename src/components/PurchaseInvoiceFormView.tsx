@@ -368,13 +368,13 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
               </div>
 
               <div className="bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-800 flex items-center gap-2">
-                <span className="text-emerald-300 text-xs font-bold">تاریخ فاکتور:</span>
-                <div className="w-36">
+                <span className="text-emerald-300 text-xs font-bold shrink-0">تاریخ فاکتور:</span>
+                <div className="w-48 sm:w-52 min-w-[180px]">
                   <PersianDatePicker
                     value={date}
                     onChange={(newD) => setDate(newD)}
                     placeholder="تاریخ فاکتور"
-                    inputClassName="bg-emerald-950 text-emerald-100 border-emerald-700 font-bold py-1 px-2 text-xs"
+                    inputClassName="bg-emerald-950 text-emerald-100 border-emerald-700 font-bold py-1.5 px-2.5 text-xs"
                     iconColor="text-emerald-400"
                     align="left"
                   />

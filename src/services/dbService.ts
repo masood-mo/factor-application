@@ -24,7 +24,7 @@ import {
   Investor,
   InvestorPayout
 } from '../types';
-import { getCurrentJalaliDate } from '../utils/persianDate';
+import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate';
 
 const SETTINGS_DOC = 'general';
 
@@ -619,7 +619,16 @@ export async function fetchGuests(): Promise<Guest[]> {
     if (snap && !snap.empty) {
       snap.forEach((d) => remoteList.push({ id: d.id, ...d.data() } as Guest));
     }
-    const merged = mergeCollections('guests', cached, remoteList);
+    const d1Data = await fetchFromD1<Guest>('guests');
+    const combinedRemote = [...remoteList];
+    if (d1Data && d1Data.length > 0) {
+      for (const item of d1Data) {
+        if (!combinedRemote.some((r) => r.id === item.id)) {
+          combinedRemote.push(item);
+        }
+      }
+    }
+    const merged = mergeCollections('guests', cached, combinedRemote);
     setLocalCache('guests', merged);
     return merged;
   } catch {
@@ -1107,42 +1116,75 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
     updatedAt: new Date().toISOString()
   };
 
-  // 1. Immediately update local cache
-  const list = getLocalCache<SalesInvoice[]>('sales_invoices', []);
-  const idx = list.findIndex(i => i.id === id);
-  if (idx >= 0) list[idx] = invoiceObj;
-  else list.unshift(invoiceObj);
-  setLocalCache('sales_invoices', list);
-
-  // 2. Auto register / sync guest if not existing
+  // 1. Auto register / sync guest if guestName is provided
   if (invoiceObj.guestName.trim()) {
     try {
       const guests = getLocalCache<Guest[]>('guests', DEFAULT_GUESTS);
-      const existingGuest = guests.find(
-        g => g.name.trim().toLowerCase() === invoiceObj.guestName.trim().toLowerCase() ||
-             (invoiceObj.guestPhone && g.phone && g.phone === invoiceObj.guestPhone)
-      );
-      if (!existingGuest) {
+      const cleanPhone = (invoiceObj.guestPhone || '').replace(/\D/g, '');
+      const normName = normalizePersianText(invoiceObj.guestName);
+
+      let existingGuest: Guest | undefined;
+
+      if (invoiceObj.guestId) {
+        existingGuest = guests.find((g) => g.id === invoiceObj.guestId);
+      }
+      if (!existingGuest && cleanPhone.length >= 10) {
+        existingGuest = guests.find(
+          (g) => g.phone && g.phone.replace(/\D/g, '') === cleanPhone
+        );
+      }
+      if (!existingGuest && normName) {
+        existingGuest = guests.find(
+          (g) => normalizePersianText(g.name) === normName
+        );
+      }
+
+      if (existingGuest) {
+        invoiceObj.guestId = existingGuest.id;
+        let updated = false;
+        if (!existingGuest.phone && invoiceObj.guestPhone) {
+          existingGuest.phone = invoiceObj.guestPhone.trim();
+          updated = true;
+        }
+        if (!existingGuest.nationalCode && invoiceObj.guestNationalCode) {
+          existingGuest.nationalCode = invoiceObj.guestNationalCode.trim();
+          updated = true;
+        }
+        if (!existingGuest.job && invoiceObj.guestJob) {
+          existingGuest.job = invoiceObj.guestJob.trim();
+          updated = true;
+        }
+        if (updated) {
+          await saveGuest(existingGuest);
+        }
+      } else {
+        const newGuestId = invoiceObj.guestId || `guest-${Date.now()}`;
         const newGuest: Guest = {
-          id: `guest-${Date.now()}`,
+          id: newGuestId,
           name: invoiceObj.guestName.trim(),
-          phone: invoiceObj.guestPhone || '',
-          nationalCode: invoiceObj.guestNationalCode || '',
-          job: invoiceObj.guestJob || '',
+          phone: invoiceObj.guestPhone ? invoiceObj.guestPhone.trim() : '',
+          nationalCode: invoiceObj.guestNationalCode ? invoiceObj.guestNationalCode.trim() : '',
+          job: invoiceObj.guestJob ? invoiceObj.guestJob.trim() : '',
           city: '',
-          description: `ثبت خودکار از فاکتور ${invoiceObj.serialNumber}`,
+          description: `ثبت خودکار همزمان با صدور فاکتور ${invoiceObj.serialNumber}`,
           walletBalance: 0,
-          tags: ['فاکتور فروش'],
-          createdAt: invoiceObj.date
+          tags: ['مهمان فاکتور'],
+          createdAt: invoiceObj.date || getCurrentJalaliDate()
         };
-        guests.unshift(newGuest);
-        setLocalCache('guests', guests);
-        safeFirestoreOp(() => setDoc(doc(db, 'guests', newGuest.id), sanitizeForFirestore(newGuest), { merge: true }));
+        const savedNewGuest = await saveGuest(newGuest);
+        invoiceObj.guestId = savedNewGuest.id;
       }
     } catch (e) {
       console.warn('Auto guest sync notice:', e);
     }
   }
+
+  // 2. Immediately update local cache for invoice
+  const list = getLocalCache<SalesInvoice[]>('sales_invoices', []);
+  const idx = list.findIndex(i => i.id === id);
+  if (idx >= 0) list[idx] = invoiceObj;
+  else list.unshift(invoiceObj);
+  setLocalCache('sales_invoices', list);
 
   // 3. Fire-and-forget sync to Firestore (timeout-protected so UI never hangs)
   safeFirestoreOp(async () => {

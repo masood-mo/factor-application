@@ -65,7 +65,7 @@ export const PurchaseInvoicesListView: React.FC<PurchaseInvoicesListViewProps> =
       </div>
 
       {/* Date Range & Search Toolbar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />

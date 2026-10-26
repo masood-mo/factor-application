@@ -78,6 +78,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   const [guestId, setGuestId] = useState<string | undefined>(invoiceToEdit?.guestId);
   const [guestName, setGuestName] = useState<string>(invoiceToEdit?.guestName || '');
   const [guestPhone, setGuestPhone] = useState<string>(invoiceToEdit?.guestPhone || '');
+  const [guestNationalCode, setGuestNationalCode] = useState<string>(invoiceToEdit?.guestNationalCode || '');
   const [guestJob, setGuestJob] = useState<string>(invoiceToEdit?.guestJob || '');
   const [notes, setNotes] = useState<string>(invoiceToEdit?.notes || '');
   const [paid, setPaid] = useState<boolean>(invoiceToEdit?.paid ?? false);
@@ -144,6 +145,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
       setGuestId(invoiceToEdit.guestId);
       setGuestName(invoiceToEdit.guestName);
       setGuestPhone(invoiceToEdit.guestPhone || '');
+      setGuestNationalCode(invoiceToEdit.guestNationalCode || '');
       setGuestJob(invoiceToEdit.guestJob || '');
       setNotes(invoiceToEdit.notes || '');
       setPaid(invoiceToEdit.paid);
@@ -265,6 +267,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
     setGuestId(guest.id);
     setGuestName(guest.name);
     if (guest.phone) setGuestPhone(guest.phone);
+    if (guest.nationalCode) setGuestNationalCode(guest.nationalCode);
     if (guest.job) setGuestJob(guest.job);
     setShowGuestSuggestions(false);
   };
@@ -365,6 +368,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
     const incomingName = parsedData.guestName || parsedData.customerOrVendorName || parsedData.customerName;
     if (incomingName && incomingName.trim()) setGuestName(incomingName.trim());
     if (parsedData.phone || parsedData.guestPhone) setGuestPhone(parsedData.phone || parsedData.guestPhone);
+    if (parsedData.nationalCode || parsedData.guestNationalCode) setGuestNationalCode(parsedData.nationalCode || parsedData.guestNationalCode);
+    if (parsedData.job || parsedData.guestJob) setGuestJob(parsedData.job || parsedData.guestJob);
     if (parsedData.date) setDate(parsedData.date);
     if (parsedData.notes) setNotes(parsedData.notes);
 
@@ -597,6 +602,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
         guestId,
         guestName: guestName.trim(),
         guestPhone: guestPhone.trim(),
+        guestNationalCode: guestNationalCode.trim(),
         guestJob: guestJob.trim(),
         notes,
         items: processedItems,
@@ -635,6 +641,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
     setGuestId(undefined);
     setGuestName('');
     setGuestPhone('');
+    setGuestNationalCode('');
     setGuestJob('');
     setNotes('');
     setPaid(false);
@@ -787,7 +794,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
           </div>
 
           {/* Customer / Guest Detail Card */}
-          <div className="p-5 border-b border-amber-900/10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-5 border-b border-amber-900/10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
             {/* Name with Autocomplete */}
             <div className="relative">
@@ -796,18 +803,36 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                   <User className="w-3.5 h-3.5 text-amber-800" />
                   نام و نام‌خانوادگی {customerTitle} <span className="text-rose-600">*</span>:
                 </span>
-                {guestId && (
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.2 rounded font-normal">
+                {guestId ? (
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-normal flex items-center gap-0.5">
+                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
                     مهمان ثبت‌شده
                   </span>
-                )}
+                ) : guestName.trim() ? (
+                  <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-normal flex items-center gap-0.5" title="این مهمان پس از ثبت فاکتور به فهرست مهمانان اقامتگاه اضافه می‌شود">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                    مهمان جدید (افزودن خودکار)
+                  </span>
+                ) : null}
               </label>
               <input
                 type="text"
                 value={guestName}
                 onChange={(e) => {
-                  setGuestName(e.target.value);
-                  setGuestId(undefined); // becomes new guest unless selected
+                  const val = e.target.value;
+                  setGuestName(val);
+                  // Check if matches an existing guest by normalized name
+                  const match = existingGuests.find(
+                    (g) => normalizePersianText(g.name) === normalizePersianText(val)
+                  );
+                  if (match) {
+                    setGuestId(match.id);
+                    if (!guestPhone && match.phone) setGuestPhone(match.phone);
+                    if (!guestNationalCode && match.nationalCode) setGuestNationalCode(match.nationalCode);
+                    if (!guestJob && match.job) setGuestJob(match.job);
+                  } else {
+                    setGuestId(undefined);
+                  }
                   setShowGuestSuggestions(true);
                 }}
                 onFocus={() => setShowGuestSuggestions(true)}
@@ -855,13 +880,42 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
                 <Phone className="w-3.5 h-3.5 text-amber-800" />
-                شماره همراه {customerTitle} (جهت واتساپ/تلگرام):
+                شماره همراه {customerTitle} (واتساپ/تماس):
               </label>
               <input
                 type="text"
                 value={guestPhone}
-                onChange={(e) => setGuestPhone(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGuestPhone(val);
+                  if (!guestId && val.trim().length >= 10) {
+                    const clean = val.replace(/\D/g, '');
+                    const match = existingGuests.find((g) => g.phone && g.phone.replace(/\D/g, '') === clean);
+                    if (match) {
+                      setGuestId(match.id);
+                      if (!guestName) setGuestName(match.name);
+                      if (!guestNationalCode && match.nationalCode) setGuestNationalCode(match.nationalCode);
+                      if (!guestJob && match.job) setGuestJob(match.job);
+                    }
+                  }
+                }}
                 placeholder="09131234567"
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden bg-white text-left dir-ltr"
+              />
+            </div>
+
+            {/* National Code (کد ملی) */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <CreditCard className="w-3.5 h-3.5 text-amber-800" />
+                کد ملی {customerTitle} (اختیاری):
+              </label>
+              <input
+                type="text"
+                value={guestNationalCode}
+                onChange={(e) => setGuestNationalCode(e.target.value)}
+                placeholder="0012345678"
+                maxLength={10}
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-amber-700 outline-hidden bg-white text-left dir-ltr"
               />
             </div>
@@ -1205,14 +1259,14 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {payments.map((p, idx) => (
-                    <div key={p.id || idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                      <div className="w-36">
+                    <div key={p.id || idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                      <div className="w-48 sm:w-52 shrink-0">
                         <PersianDatePicker
                           value={p.date}
                           onChange={(newD) => handleUpdatePayment(idx, 'date', newD)}
                           placeholder="تاریخ واریز"
                           showTodayBtn={false}
-                          inputClassName="py-1 px-2 text-[11px]"
+                          inputClassName="py-1 px-2.5 text-xs"
                         />
                       </div>
                       <input

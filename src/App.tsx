@@ -56,6 +56,7 @@ import {
   deleteInvestorPayout,
   DEFAULT_SETTINGS,
 } from './services/dbService';
+import { getCurrentJalaliDate } from './utils/persianDate';
 
 import { Header } from './components/Header';
 import { SettingsView } from './components/SettingsView';
@@ -258,8 +259,12 @@ export default function App() {
   // Handlers for Sales Invoices
   const handleSaveSalesInvoice = async (inv: Partial<SalesInvoice>): Promise<SalesInvoice> => {
     const saved = await saveSalesInvoice(inv);
-    const updated = await fetchSalesInvoices();
-    setSalesInvoices(updated);
+    const [updatedInvoices, updatedGuests] = await Promise.all([
+      fetchSalesInvoices(),
+      fetchGuests()
+    ]);
+    setSalesInvoices(updatedInvoices);
+    setGuests(updatedGuests);
     setEditingSalesInvoice(null);
     return saved;
   };
@@ -285,8 +290,12 @@ export default function App() {
       status: 'FINAL',
       invoiceKind: 'FINAL'
     });
-    const updated = await fetchSalesInvoices();
-    setSalesInvoices(updated);
+    const [updatedInvoices, updatedGuests] = await Promise.all([
+      fetchSalesInvoices(),
+      fetchGuests()
+    ]);
+    setSalesInvoices(updatedInvoices);
+    setGuests(updatedGuests);
     if (printingSalesInvoice && printingSalesInvoice.id === invoiceId) {
       setPrintingSalesInvoice({
         ...printingSalesInvoice,
@@ -537,18 +546,23 @@ export default function App() {
               setEditingSalesInvoice({
                 id: '',
                 serialNumber: '',
-                date: '',
+                date: getCurrentJalaliDate(),
+                guestId: guest.id,
                 guestName: guest.name,
-                guestNationalId: guest.nationalCode || '',
+                guestNationalCode: guest.nationalCode || '',
                 guestPhone: guest.phone || '',
+                guestJob: guest.job || '',
+                notes: '',
                 items: [],
-                subtotal: 0,
-                serviceFee: 0,
-                taxFee: 0,
-                discount: 0,
+                totalItemsAmount: 0,
+                totalDiscountAmount: 0,
+                totalTaxAmount: 0,
                 totalPayable: 0,
+                totalPayableInWords: '',
+                payments: [],
+                totalPaidAmount: 0,
+                remainingBalance: 0,
                 paid: false,
-                paymentMethod: 'CASH',
                 status: 'FINAL',
                 invoiceKind: 'FINAL',
                 createdAt: new Date().toISOString(),
@@ -642,6 +656,9 @@ export default function App() {
             salesInvoices={salesInvoices}
             purchaseInvoices={purchaseInvoices}
             categories={categories}
+            items={items}
+            purchaseCategories={purchaseCategories}
+            purchaseItems={purchaseItems}
             wagePayments={wagePayments}
             customerTitle={settings.customerTitle || 'مهمان'}
           />

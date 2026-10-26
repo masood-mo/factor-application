@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Calculator,
   PieChart,
@@ -247,12 +247,19 @@ export function BudgetAndInvestorView({
   const [endDate, setEndDate] = useState<string>(getLastDayOfMonthJalali());
 
   // Category Selection for General Budget calculation
-  const [selectedSalesCategoryIds, setSelectedSalesCategoryIds] = useState<string[]>(
-    categories.map((c) => c.id)
-  );
-  const [selectedPurchaseCategoryIds, setSelectedPurchaseCategoryIds] = useState<string[]>(
-    categories.map((c) => c.id)
-  );
+  const [selectedBudgetCategoryIds, setSelectedBudgetCategoryIds] = useState<string[]>(() => [
+    ...categories.map((c) => c.id),
+    'other'
+  ]);
+  const hasInitializedBudgetCategories = useRef(categories.length > 0);
+
+  useEffect(() => {
+    if (!hasInitializedBudgetCategories.current && categories.length > 0) {
+      setSelectedBudgetCategoryIds([...categories.map((c) => c.id), 'other']);
+      hasInitializedBudgetCategories.current = true;
+    }
+  }, [categories]);
+
   const [includeWagesInExpenses, setIncludeWagesInExpenses] = useState<boolean>(true);
 
   // Investor Share Settings
@@ -314,10 +321,32 @@ export function BudgetAndInvestorView({
     });
   });
 
-  // Calculate In-Scope Sales Revenue for Budget
+  // Calculate In-Scope Sales Revenue for Overall Overview
   const totalInScopeSalesRevenue = inRangeSales.reduce((sum, inv) => {
     return sum + (Number(inv.totalPayable) || 0);
   }, 0);
+
+  // List of all sales categories for display & budget selection
+  const allDisplaySalesCategories = useMemo(() => {
+    const list = [...categories];
+    if (salesByCategory['other'] && salesByCategory['other'] > 0) {
+      list.push({
+        id: 'other',
+        name: 'سایر / بدون دسته‌بندی'
+      });
+    }
+    return list;
+  }, [categories, salesByCategory]);
+
+  // Total budget-eligible sales income based on selected income categories
+  const totalBudgetEligibleIncome = useMemo(() => {
+    return allDisplaySalesCategories.reduce((sum, cat) => {
+      if (selectedBudgetCategoryIds.includes(cat.id)) {
+        return sum + (salesByCategory[cat.id] || 0);
+      }
+      return sum;
+    }, 0);
+  }, [allDisplaySalesCategories, selectedBudgetCategoryIds, salesByCategory]);
 
   // Calculate Total In-Scope Purchases
   const totalInScopePurchases = inRangePurchases.reduce((sum, inv) => {
@@ -376,12 +405,12 @@ export function BudgetAndInvestorView({
   // - سود سرمایه گذار
   const configRows = settings.budgetRows || [];
 
-  // 1. Wage row
+  // 1. Wage row (Allocated ceiling based on selected budget income)
   const wageConfig = configRows.find(
     (r) => r.isWageRow || r.name.includes('حقوق') || r.name.includes('دستمزد')
   );
   const wagePercentage = wageConfig ? Number(wageConfig.percentage) : 20;
-  const wageAllocated = (totalInScopeSalesRevenue * wagePercentage) / 100;
+  const wageAllocated = (totalBudgetEligibleIncome * wagePercentage) / 100;
   const wageRowCalculated = {
     id: 'b-wages',
     name: 'حقوق و دستمزد و انعام پرسنل',
@@ -394,7 +423,7 @@ export function BudgetAndInvestorView({
     usagePercent: wageAllocated > 0 ? (totalInScopeWages / wageAllocated) * 100 : 0
   };
 
-  // 2. Purchase Category rows
+  // 2. Purchase Category rows (Allocated ceiling based on selected budget income)
   const purchaseCategoryRowsCalculated = effectivePurchaseCategories.map((cat) => {
     const catConfig = configRows.find(
       (r) =>
@@ -411,7 +440,7 @@ export function BudgetAndInvestorView({
     else if (cat.name.includes('تجهیزات') || cat.name.includes('ملزومات')) defaultPct = 5;
 
     const percentage = catConfig ? Number(catConfig.percentage) : defaultPct;
-    const allocatedBudget = (totalInScopeSalesRevenue * percentage) / 100;
+    const allocatedBudget = (totalBudgetEligibleIncome * percentage) / 100;
     const actualSpent = categorySpentMap[cat.id] || 0;
     const variance = allocatedBudget - actualSpent;
     const usagePercent = allocatedBudget > 0 ? (actualSpent / allocatedBudget) * 100 : 0;
@@ -429,21 +458,21 @@ export function BudgetAndInvestorView({
     };
   });
 
-  // Calculate Investor Profit Amount
+  // Calculate Investor Profit Amount (for Section 2 reference)
   const investorEligibleExpenses = totalInScopeExpenses;
   const investorNetBaseProfit = Math.max(0, investorEligibleRevenue - investorEligibleExpenses);
   const investorShareAmount = (investorNetBaseProfit * investorSharePercent) / 100;
 
-  // 3. Investor Profit row
+  // 3. Investor Profit row (Allocated ceiling based on selected budget income; actual cost based on recorded payouts)
   const investorConfig = configRows.find(
     (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
   );
   const investorPercentage = investorConfig
     ? Number(investorConfig.percentage)
     : (settings.investorSharePercent || 35);
-  const investorAllocated = (totalInScopeSalesRevenue * investorPercentage) / 100;
-  // Real cost: actual payouts if recorded, otherwise eligible profit share
-  const investorActualSpent = totalInvestorPayoutsPaid > 0 ? totalInvestorPayoutsPaid : investorShareAmount;
+  const investorAllocated = (totalBudgetEligibleIncome * investorPercentage) / 100;
+  // Real cost: strictly actual payouts registered to investors in this date range
+  const investorActualSpent = totalInvestorPayoutsPaid;
   const investorRowCalculated = {
     id: 'b-investor',
     name: 'سود سرمایه‌گذار',
@@ -495,10 +524,18 @@ export function BudgetAndInvestorView({
   const totalUsagePercentSum =
     totalAllocatedSum > 0 ? (totalActualSpentSum / totalAllocatedSum) * 100 : 0;
 
-  const toggleCategorySelection = (catId: string) => {
-    setSelectedSalesCategoryIds((prev) =>
+  const toggleBudgetCategory = (catId: string) => {
+    setSelectedBudgetCategoryIds((prev) =>
       prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
     );
+  };
+
+  const selectAllBudgetCategories = () => {
+    setSelectedBudgetCategoryIds(allDisplaySalesCategories.map((c) => c.id));
+  };
+
+  const deselectAllBudgetCategories = () => {
+    setSelectedBudgetCategoryIds([]);
   };
 
   const toggleInvestorExemptCategory = (catId: string) => {
@@ -559,25 +596,40 @@ export function BudgetAndInvestorView({
 
       {/* Date Range & Custom Input Toolbar */}
       <div className="bg-white rounded-2xl p-4 border border-amber-900/15 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Calendar className="w-4 h-4 text-amber-800" />
-          <span className="text-xs font-bold text-slate-700">بازه محاسباتی:</span>
-          <div className="w-36">
-            <PersianDatePicker
-              value={startDate}
-              onChange={(newD) => setStartDate(newD)}
-              placeholder="شروع"
-              inputClassName="py-1 px-2 text-xs"
-            />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs shrink-0">
+            <Calendar className="w-4 h-4 text-amber-800" />
+            <span>بازه محاسباتی:</span>
           </div>
-          <span className="text-xs text-slate-400">تا</span>
-          <div className="w-36">
-            <PersianDatePicker
-              value={endDate}
-              onChange={(newD) => setEndDate(newD)}
-              placeholder="پایان"
-              inputClassName="py-1 px-2 text-xs"
-            />
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-slate-500 font-bold shrink-0">از:</span>
+            <div className="w-48 sm:w-52 min-w-[185px]">
+              <PersianDatePicker
+                value={startDate}
+                onChange={(newD) => {
+                  setStartDate(newD);
+                  setDateFilterMode('CUSTOM');
+                }}
+                placeholder="شروع (۱۴۰۳/۰۱/۰۱)"
+                inputClassName="py-2 px-3 text-xs"
+                allowClear
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-slate-500 font-bold shrink-0">تا:</span>
+            <div className="w-48 sm:w-52 min-w-[185px]">
+              <PersianDatePicker
+                value={endDate}
+                onChange={(newD) => {
+                  setEndDate(newD);
+                  setDateFilterMode('CUSTOM');
+                }}
+                placeholder="پایان (۱۴۰۳/۱۲/۲۹)"
+                inputClassName="py-2 px-3 text-xs"
+                allowClear
+              />
+            </div>
           </div>
         </div>
 
@@ -604,6 +656,11 @@ export function BudgetAndInvestorView({
             </p>
             <span className="text-[11px] text-slate-500 mt-1 block">
               {inRangeSales.length} فاکتور فروش صادره
+              {totalBudgetEligibleIncome !== totalInScopeSalesRevenue && (
+                <span className="text-emerald-700 font-bold mr-2">
+                  (مبنای بودجه: {formatPersianPrice(totalBudgetEligibleIncome)} تومان)
+                </span>
+              )}
             </span>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center">
@@ -644,14 +701,120 @@ export function BudgetAndInvestorView({
 
       {/* Section 1: Budget Rows & Variance Table */}
       <div className="bg-white rounded-2xl border border-amber-900/15 shadow-xs overflow-hidden">
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+        {/* Table Top Header Bar */}
+        <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <PieChart className="w-5 h-5 text-amber-300" />
-            <h3 className="text-sm font-bold">جدول درصد و انحراف ردیف‌های بودجه اقامتگاه</h3>
+            <div>
+              <h3 className="text-sm font-bold">جدول درصد و انحراف ردیف‌های بودجه اقامتگاه</h3>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                سنجش انحراف از بودجه مصوب بر مبنای دسته‌بندی‌های درآمدی انتخابی
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-amber-200">
-            تخصیص بر مبنای کل درآمد ({formatPersianPrice(totalInScopeSalesRevenue)} تومان)
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs text-amber-200 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700 font-medium">
+              درآمد مبنای تخصیص سقف:{' '}
+              <strong className="font-mono text-white text-sm">{formatPersianPrice(totalBudgetEligibleIncome)}</strong> تومان
+            </span>
+          </div>
+        </div>
+
+        {/* Budget Eligible Income Categories Selector (مشابه با بخش محاسبه سود سرمایه‌گذار) */}
+        <div className="p-4 sm:p-5 bg-amber-50/40 border-b border-amber-900/10 flex flex-col gap-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-slate-900">
+                تعیین دسته‌بندی‌های درآمدی مشمول در محاسبه سقف بودجه اقامتگاه:
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                روی هر دسته کلیک کنید تا در جمع درآمد مبنای تخصیص بودجه ردیف‌ها لحاظ یا حذف شود
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={selectAllBudgetCategories}
+                className="text-[11px] font-bold text-amber-800 hover:text-amber-950 px-2.5 py-1 rounded-lg hover:bg-amber-100/60 transition-colors cursor-pointer"
+              >
+                انتخاب همه
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={deselectAllBudgetCategories}
+                className="text-[11px] font-bold text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
+              >
+                لغو همه
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {allDisplaySalesCategories.map((cat) => {
+              const isIncluded = selectedBudgetCategoryIds.includes(cat.id);
+              const catRevenue = salesByCategory[cat.id] || 0;
+              const catShareOfTotal = totalInScopeSalesRevenue > 0
+                ? Math.round((catRevenue / totalInScopeSalesRevenue) * 100)
+                : 0;
+
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => toggleBudgetCategory(cat.id)}
+                  className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-2xs ${
+                    isIncluded
+                      ? 'bg-emerald-50/80 border-emerald-300 hover:bg-emerald-100/70 ring-1 ring-emerald-400/20'
+                      : 'bg-slate-50/90 border-slate-200 text-slate-400 hover:bg-slate-100/80 opacity-75'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className={`font-bold text-xs ${isIncluded ? 'text-slate-900' : 'text-slate-500'}`}>
+                      {cat.name}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        isIncluded
+                          ? 'bg-emerald-200 text-emerald-800'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {isIncluded ? (
+                        <>
+                          <CheckSquare className="w-3 h-3 text-emerald-700" />
+                          مشمول در بودجه
+                        </>
+                      ) : (
+                        <>
+                          <Square className="w-3 h-3 text-slate-500" />
+                          حذف از بودجه
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-baseline justify-between w-full pt-1 border-t border-slate-200/60">
+                    <span className="text-[11px] text-slate-500">فروش این بازه:</span>
+                    <span className={`text-xs font-mono font-bold ${isIncluded ? 'text-slate-800' : 'text-slate-400'}`}>
+                      {formatPersianPrice(catRevenue)} تومان
+                      <span className="text-[10px] text-slate-400 font-normal mr-1">({catShareOfTotal}٪)</span>
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedBudgetCategoryIds.length < allDisplaySalesCategories.length && (
+            <div className="flex items-center justify-between text-[11px] bg-amber-100/70 text-amber-900 px-3.5 py-2 rounded-xl border border-amber-200">
+              <span>
+                توجه: برخی دسته‌بندی‌ها از محاسبه بودجه حذف شده‌اند. کل فروش ناخالص دوره:{' '}
+                <strong className="font-mono">{formatPersianPrice(totalInScopeSalesRevenue)}</strong> تومان | درآمد مبنای بودجه:{' '}
+                <strong className="font-mono text-emerald-900">{formatPersianPrice(totalBudgetEligibleIncome)}</strong> تومان
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">

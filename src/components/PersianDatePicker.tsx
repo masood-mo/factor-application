@@ -3,6 +3,7 @@ import {
   Calendar as CalendarIcon,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
   X,
   Clock,
   Check
@@ -220,35 +221,40 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
       {/* Trigger Input */}
       <div
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white cursor-pointer select-none transition-all hover:border-amber-700/60 focus-within:ring-2 focus-within:ring-amber-700 ${
+        className={`flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white cursor-pointer select-none transition-all hover:border-amber-700/60 focus-within:ring-2 focus-within:ring-amber-700 min-w-[170px] ${
           disabled ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''
         } ${inputClassName}`}
       >
-        <div className="flex items-center gap-2 overflow-hidden flex-1">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <CalendarIcon className={`w-4 h-4 shrink-0 ${iconColor}`} />
           {displayFormatted ? (
-            <span className="font-bold text-slate-800 font-sans tracking-wide">
+            <span
+              dir="ltr"
+              className="font-bold text-slate-800 font-mono tracking-normal text-xs sm:text-[13px] whitespace-nowrap tabular-nums text-start"
+            >
               {displayFormatted}
             </span>
           ) : (
-            <span className="text-slate-400">{placeholder}</span>
+            <span className="text-slate-400 truncate text-[11px]">{placeholder}</span>
           )}
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {allowClear && value && (
+          {allowClear && value && !disabled && (
             <button
               type="button"
               onClick={handleClear}
-              className="p-1 text-slate-400 hover:text-rose-600 rounded-md transition-colors"
+              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
               title="پاک کردن تاریخ"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
-          <span className="text-[10px] text-amber-800/70 bg-amber-50 px-1.5 py-0.5 rounded font-bold border border-amber-200/50">
-            تقویم
-          </span>
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${
+              isOpen ? 'rotate-180 text-amber-800' : ''
+            }`}
+          />
         </div>
       </div>
 
