@@ -109,6 +109,7 @@ export const DEFAULT_SETTINGS: LodgeSettings = {
   budgetRows: DEFAULT_BUDGET_ROWS,
   investorSharePercent: 35,
   investorExemptCategoryIds: ['cat-3'],
+  invoiceTemplate: 'detailed',
 };
 
 export const DEFAULT_CATEGORIES: Category[] = [

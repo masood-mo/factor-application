@@ -31,7 +31,10 @@ export interface LodgeSettings {
   budgetRows: BudgetRowConfig[];
   investorSharePercent: number; // e.g. 30%
   investorExemptCategoryIds: string[]; // categories exempt from investor profit calculation
+  invoiceTemplate?: InvoiceTemplateId; // 'detailed' | 'compact' | 'minimal'
 }
+
+export type InvoiceTemplateId = 'detailed' | 'compact' | 'minimal';
 
 export interface Category {
   id: string;

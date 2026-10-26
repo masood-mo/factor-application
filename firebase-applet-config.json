@@ -1,9 +1,12 @@
 {
-  "apiKey": "AIzaSyDummyKeyForDevelopment123456789",
-  "authDomain": "ecolodge-accounting.firebaseapp.com",
-  "projectId": "ecolodge-accounting",
-  "storageBucket": "ecolodge-accounting.appspot.com",
-  "messagingSenderId": "123456789012",
-  "appId": "1:123456789012:web:abcdef1234567890abcdef",
-  "firestoreDatabaseId": "(default)"
+  "projectId": "tokyo-talent-1f6jr",
+  "appId": "1:1059431194026:web:50bacaed1fee3aa69f5fd3",
+  "apiKey": "AIzaSyAbBmpyciUqMUL857kfePr7PJGp9ccVYG8",
+  "authDomain": "tokyo-talent-1f6jr.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-factorapplicatio-e677eee2-8929-4624-9d72-d4527f6bafd1",
+  "storageBucket": "tokyo-talent-1f6jr.firebasestorage.app",
+  "messagingSenderId": "1059431194026",
+  "measurementId": "",
+  "oAuthClientId": "1059431194026-0275jfkf81el8s17fiumv26fms73ea6d.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

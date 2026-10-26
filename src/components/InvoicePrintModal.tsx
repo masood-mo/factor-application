@@ -18,7 +18,10 @@ import {
   MessageSquare,
   Send,
   FileCheck,
-  Tag
+  Tag,
+  Loader2,
+  AlertCircle,
+  FileDown
 } from 'lucide-react';
 
 interface InvoicePrintModalProps {
@@ -35,11 +38,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   onConvertToFinalInvoice
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
-  const [exporting, setExporting] = useState<boolean>(false);
+  const [exportingPDF, setExportingPDF] = useState<boolean>(false);
+  const [exportingImage, setExportingImage] = useState<boolean>(false);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const customerTitle = settings.customerTitle || 'مهمان';
 
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
-  const [sharePhone, setSharePhone] = useState<string>(invoice.guestPhone || '');
+  const [sharePhone, setSharePhone] = useState<string>(invoice ? invoice.guestPhone || '' : '');
   const [shareType, setShareType] = useState<'whatsapp' | 'telegram'>('whatsapp');
   const [customShareText, setCustomShareText] = useState<string>('');
 
@@ -51,52 +57,114 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   // Export to JPG Image
   const handleExportImage = async () => {
-    if (!printRef.current) return;
-    setExporting(true);
+    if (!printRef.current || exportingImage || exportingPDF) return;
+    setExportingImage(true);
+    setExportError(null);
+    setExportSuccess(null);
     try {
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
+      const element = printRef.current;
+      const originalOverflow = element.style.overflow;
+      element.style.overflow = 'visible';
+
+      const canvas = await html2canvas(element, {
+        scale: 2.5,
         useCORS: true,
-        backgroundColor: '#FFFFFF'
+        allowTaint: true,
+        backgroundColor: '#FFFFFF',
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
       });
+
+      element.style.overflow = originalOverflow;
+
       const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
       const link = document.createElement('a');
-      link.download = `Invoice-${invoice.serialNumber}.jpg`;
+      const safeGuestName = (invoice.guestName || 'guest').replace(/[/\\?%*:|"<>]/g, '_');
+      link.download = `Invoice-${invoice.serialNumber}-${safeGuestName}.jpg`;
       link.href = dataUrl;
       link.click();
+      setExportSuccess('تصویر فاکتور (JPG) با موفقیت ذخیره و دانلود شد.');
+      setTimeout(() => setExportSuccess(null), 4000);
     } catch (err) {
       console.error('Error generating image:', err);
-      alert('خطا در ایجاد خروجی تصویر فاکتور');
+      setExportError('خطا در ایجاد خروجی تصویر فاکتور');
+      setTimeout(() => setExportError(null), 5000);
     } finally {
-      setExporting(false);
+      setExportingImage(false);
     }
   };
 
-  // Export to PDF Document
+  // Export to PDF Document using jsPDF
   const handleExportPDF = async () => {
-    if (!printRef.current) return;
-    setExporting(true);
+    if (!printRef.current || exportingPDF || exportingImage) return;
+    setExportingPDF(true);
+    setExportError(null);
+    setExportSuccess(null);
     try {
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
+      const element = printRef.current;
+      const originalOverflow = element.style.overflow;
+      element.style.overflow = 'visible';
+
+      // Capture at high resolution (2.5x) for crystal-clear Persian typography and borders
+      const canvas = await html2canvas(element, {
+        scale: 2.5,
         useCORS: true,
-        backgroundColor: '#FFFFFF'
+        allowTaint: true,
+        backgroundColor: '#FFFFFF',
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
       });
-      const imgData = canvas.toDataURL('image/png');
+
+      element.style.overflow = originalOverflow;
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: 'a4'
+        format: 'a4',
+        compress: true,
       });
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Invoice-${invoice.serialNumber}.pdf`);
+
+      const pageWidth = pdf.internal.pageSize.getWidth(); // 210mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+      const margin = 8; // 8mm margin
+      const contentWidth = pageWidth - margin * 2; // 194mm
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+
+      // Single-page or multi-page handling
+      if (contentHeight <= pageHeight - margin * 2) {
+        pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
+      } else {
+        const usablePageHeight = pageHeight - margin * 2;
+        let heightLeft = contentHeight;
+        let position = margin;
+
+        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        heightLeft -= usablePageHeight;
+
+        while (heightLeft > 0) {
+          position = position - usablePageHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+          heightLeft -= usablePageHeight;
+        }
+      }
+
+      const safeGuestName = (invoice.guestName || 'مهمان').replace(/[/\\?%*:|"<>]/g, '_');
+      const docType = invoice.status === 'PROFORMA' ? 'PishFactor' : 'Invoice';
+      const fileName = `${docType}-${invoice.serialNumber}-${safeGuestName}.pdf`;
+
+      pdf.save(fileName);
+      setExportSuccess('سند PDF فاکتور با موفقیت تولید و دانلود شد.');
+      setTimeout(() => setExportSuccess(null), 4000);
     } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('خطا در ایجاد خروجی PDF فاکتور');
+      console.error('Error generating PDF with jsPDF:', err);
+      setExportError('خطا در ایجاد خروجی سند PDF فاکتور');
+      setTimeout(() => setExportError(null), 5000);
     } finally {
-      setExporting(false);
+      setExportingPDF(false);
     }
   };
 
@@ -229,29 +297,47 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             {/* Export JPG */}
             <button
               onClick={handleExportImage}
-              disabled={exporting}
+              disabled={exportingImage || exportingPDF}
               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer border border-slate-700 disabled:opacity-50"
               title="دانلود به عنوان تصویر JPG"
             >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">خروجی عکس</span>
+              {exportingImage ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="hidden sm:inline">در حال ایجاد عکس...</span>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">خروجی عکس</span>
+                </>
+              )}
             </button>
 
-            {/* Export PDF */}
+            {/* Download as PDF Button */}
             <button
               onClick={handleExportPDF}
-              disabled={exporting}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-bold px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer border border-slate-700 disabled:opacity-50"
-              title="دانلود فایل PDF"
+              disabled={exportingPDF || exportingImage}
+              className="flex items-center gap-1.5 bg-rose-700 hover:bg-rose-800 active:bg-rose-900 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs transition-all cursor-pointer shadow-xs hover:shadow-md disabled:opacity-50"
+              title="دانلود به صورت سند PDF (Download as PDF)"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">خروجی PDF</span>
+              {exportingPDF ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>در حال ساخت PDF...</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>دانلود PDF</span>
+                </>
+              )}
             </button>
 
             {/* Standard Print */}
             <button
               onClick={handlePrint}
-              className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-white font-bold px-4 py-1.5 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-white font-bold px-3 sm:px-4 py-1.5 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
             >
               <Printer className="w-4 h-4 text-amber-300" />
               <span>چاپ</span>
@@ -265,6 +351,36 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Export Status Notification */}
+        {exportSuccess && (
+          <div className="no-print bg-emerald-50 border-b border-emerald-200 text-emerald-800 px-4 py-2 text-xs font-bold flex items-center justify-between shrink-0">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {exportSuccess}
+            </span>
+            <button
+              onClick={() => setExportSuccess(null)}
+              className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        {exportError && (
+          <div className="no-print bg-rose-50 border-b border-rose-200 text-rose-800 px-4 py-2 text-xs font-bold flex items-center justify-between shrink-0">
+            <span className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600" />
+              {exportError}
+            </span>
+            <button
+              onClick={() => setExportError(null)}
+              className="text-rose-700 hover:text-rose-900 p-1 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Printable & Exportable Canvas Area */}
         <div ref={printRef} className="p-6 sm:p-8 bg-white overflow-y-auto print-shadow-none flex-1 font-sans text-slate-800">
@@ -498,6 +614,59 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           {/* NOTE: Requirement 9 explicitly mandates: "مهر و امضای مدیریت اقامتگاه، امضا و تایید خریدار / مهمان، از پایین فاکتور حذف بشه"
               Therefore signature section is removed here completely. */}
 
+        </div>
+
+        {/* Bottom Action Footer (Hidden on print) */}
+        <div className="no-print bg-slate-50 border-t border-slate-200 p-3 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span className="hidden sm:inline">سند رسمی قابل استناد، ذخیره به صورت PDF استاندارد در سایز A4</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+            {/* Primary Download as PDF Button */}
+            <button
+              onClick={handleExportPDF}
+              disabled={exportingPDF || exportingImage}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 bg-rose-700 hover:bg-rose-800 active:bg-rose-900 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-sm hover:shadow-md disabled:opacity-50"
+            >
+              {exportingPDF ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>در حال ذخیره فایل PDF...</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-4 h-4" />
+                  <span>دانلود به صورت سند PDF (Download as PDF)</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleExportImage}
+              disabled={exportingPDF || exportingImage}
+              className="flex items-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold px-3 py-2 rounded-xl text-xs transition-all cursor-pointer disabled:opacity-50"
+            >
+              <ImageIcon className="w-4 h-4 text-slate-500" />
+              <span className="hidden sm:inline">دانلود تصویر JPG</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer shadow-xs"
+            >
+              <Printer className="w-4 h-4 text-amber-300" />
+              <span>چاپ مستقیم</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 cursor-pointer"
+            >
+              بستن
+            </button>
+          </div>
         </div>
       </div>
 
