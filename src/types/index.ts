@@ -248,6 +248,15 @@ export interface PurchaseInvoice {
   updatedAt?: string;
 }
 
+export interface Vendor {
+  id: string;
+  name: string;
+  phone?: string;
+  category?: string;
+  notes?: string;
+  createdAt?: string;
+}
+
 export type ActiveTab = 
   | 'new_sales_invoice' 
   | 'sales_invoices_list' 

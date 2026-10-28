@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item, Category } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { LodgeSettings, PurchaseInvoice, PurchaseInvoiceItem, Item, Category, Vendor } from '../types';
 import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate';
 import { savePurchaseItem } from '../services/dbService';
 import { PersianDatePicker } from './PersianDatePicker';
 import { formatPersianPrice } from '../utils/numberToWords';
-import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText, AlertCircle, X } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, Save, CheckCircle2, Clock, Building2, Store, FileText, AlertCircle, X, Search, ArrowRight, UserCheck, Check } from 'lucide-react';
 
 export function detectPurchaseCategory(
   itemName: string,
@@ -68,9 +68,11 @@ interface PurchaseInvoiceFormViewProps {
   settings: LodgeSettings;
   existingItems?: Item[];
   categories?: Category[];
+  existingVendors?: (Vendor | string)[];
   invoiceToEdit?: PurchaseInvoice | null;
   onSaveInvoice: (invoice: Partial<PurchaseInvoice>) => Promise<PurchaseInvoice>;
   onAutoCreatePurchaseItem?: (item: Partial<Item>) => Promise<Item>;
+  onNavigateToList?: () => void;
   onCancelEdit?: () => void;
 }
 
@@ -78,11 +80,14 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   settings,
   existingItems = [],
   categories = [],
+  existingVendors = [],
   invoiceToEdit,
   onSaveInvoice,
   onAutoCreatePurchaseItem,
+  onNavigateToList,
   onCancelEdit,
 }) => {
+  const [currentInvoiceId, setCurrentInvoiceId] = useState<string | undefined>(invoiceToEdit?.id);
   const [serialNumber, setSerialNumber] = useState<string>(
     invoiceToEdit?.serialNumber || `PUR-${Math.floor(1000 + Math.random() * 9000)}`
   );
@@ -91,6 +96,13 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
   const [notes, setNotes] = useState<string>(invoiceToEdit?.notes || '');
   const [paid, setPaid] = useState<boolean>(invoiceToEdit?.paid ?? true);
   const [activeItemSuggestIndex, setActiveItemSuggestIndex] = useState<number | null>(null);
+
+  // Vendor autocomplete state (Requirement ب)
+  const [showVendorSuggestions, setShowVendorSuggestions] = useState<boolean>(false);
+  const vendorDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Success modal state (Requirement د)
+  const [savedPurchaseModal, setSavedPurchaseModal] = useState<PurchaseInvoice | null>(null);
 
   const [items, setItems] = useState<PurchaseInvoiceItem[]>(
     invoiceToEdit?.items || [
@@ -116,6 +128,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
   useEffect(() => {
     if (invoiceToEdit) {
+      setCurrentInvoiceId(invoiceToEdit.id);
       setSerialNumber(invoiceToEdit.serialNumber);
       setDate(invoiceToEdit.date);
       setVendorName(invoiceToEdit.vendorName);
@@ -124,6 +137,56 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
       setItems(invoiceToEdit.items);
     }
   }, [invoiceToEdit]);
+
+  // Click outside to close vendor autocomplete
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (vendorDropdownRef.current && !vendorDropdownRef.current.contains(e.target as Node)) {
+        setShowVendorSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Normalized vendors list for autocomplete
+  const normalizedVendors = useMemo(() => {
+    const list: { id: string; name: string; phone?: string; category?: string }[] = [];
+    const seenNames = new Set<string>();
+
+    existingVendors.forEach((v, idx) => {
+      const vName = typeof v === 'string' ? v.trim() : (v.name || '').trim();
+      const norm = normalizePersianText(vName);
+      if (vName && !seenNames.has(norm)) {
+        seenNames.add(norm);
+        if (typeof v === 'string') {
+          list.push({ id: `vnd-${idx}`, name: vName });
+        } else {
+          list.push({
+            id: v.id || `vnd-${idx}`,
+            name: vName,
+            phone: v.phone || '',
+            category: v.category || ''
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [existingVendors]);
+
+  // Filtered vendor suggestions based on typed input
+  const filteredVendorSuggestions = useMemo(() => {
+    const q = normalizePersianText(vendorName.trim());
+    if (!q) return normalizedVendors.slice(0, 8);
+    return normalizedVendors.filter((v) => normalizePersianText(v.name).includes(q));
+  }, [normalizedVendors, vendorName]);
+
+  const isExactExistingVendor = useMemo(() => {
+    const norm = normalizePersianText(vendorName.trim());
+    if (!norm) return true;
+    return normalizedVendors.some((v) => normalizePersianText(v.name) === norm);
+  }, [normalizedVendors, vendorName]);
 
   const recalculateRow = (row: PurchaseInvoiceItem): PurchaseInvoiceItem => {
     const qty = Math.max(0, row.quantity || 0);
@@ -293,8 +356,8 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
         }
       }
 
-      await onSaveInvoice({
-        id: invoiceToEdit?.id,
+      const saved = await onSaveInvoice({
+        id: currentInvoiceId || invoiceToEdit?.id,
         serialNumber: serialNumber.trim() || `PUR-${Math.floor(1000 + Math.random() * 9000)}`,
         date: date || getCurrentJalaliDate(),
         vendorName: vendorName.trim(),
@@ -306,7 +369,10 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
         paid,
       });
 
-      setFormSuccess(invoiceToEdit ? 'فاکتور خرید با موفقیت بروزرسانی شد.' : 'فاکتور خرید با موفقیت ثبت شد.');
+      setCurrentInvoiceId(saved.id);
+      setSerialNumber(saved.serialNumber);
+      setFormSuccess(invoiceToEdit ? 'فاکتور خرید با موفقیت بروزرسانی شد.' : 'فاکتور خرید با موفقیت در سیستم ثبت گردید.');
+      setSavedPurchaseModal(saved);
     } catch (err) {
       console.error(err);
       const msg = 'خطا در ثبت فاکتور خرید. لطفاً مجدداً بررسی فرمایید.';
@@ -318,6 +384,33 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleResetForNewPurchaseInvoice = () => {
+    setSavedPurchaseModal(null);
+    setCurrentInvoiceId(undefined);
+    if (onCancelEdit) onCancelEdit();
+    setSerialNumber(`PUR-${Math.floor(1000 + Math.random() * 9000)}`);
+    setDate(getCurrentJalaliDate());
+    setVendorName('');
+    setNotes('');
+    setPaid(true);
+    setFormSuccess(null);
+    setFormError(null);
+    setItems([
+      {
+        id: `prow-${Date.now()}-1`,
+        rowNum: 1,
+        itemName: '',
+        unit: settings.units[0] || 'عدد',
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 0,
+        discount: 0,
+        paidAmount: 0,
+        description: '',
+      },
+    ]);
   };
 
   return (
@@ -369,7 +462,7 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
               <div className="bg-emerald-950/60 px-3 py-1.5 rounded-xl border border-emerald-800 flex items-center gap-2">
                 <span className="text-emerald-300 text-xs font-bold shrink-0">تاریخ فاکتور:</span>
-                <div className="w-48 sm:w-52 min-w-[180px]">
+                <div className="w-56 sm:w-60 min-w-[210px]">
                   <PersianDatePicker
                     value={date}
                     onChange={(newD) => setDate(newD)}
@@ -383,28 +476,89 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
             </div>
           </div>
 
-          {/* Vendor Details */}
+          {/* Vendor Details & Autocomplete (Requirement ب) */}
           <div className="p-5 bg-emerald-50/40 border-b border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="vendorNameInput" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                <Store className="w-3.5 h-3.5 text-emerald-700" />
-                نام فروشنده / تامین‌کننده <span className="text-rose-500">*</span>
+            <div ref={vendorDropdownRef} className="relative">
+              <label htmlFor="vendorNameInput" className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1">
+                  <Store className="w-3.5 h-3.5 text-emerald-700" />
+                  نام فروشنده / تامین‌کننده <span className="text-rose-500">*</span>
+                </span>
+                {normalizedVendors.length > 0 && (
+                  <span className="text-[10px] text-emerald-700 font-normal">
+                    (امکان انتخاب از {normalizedVendors.length} فروشنده قبلی یا تایپ نام جدید)
+                  </span>
+                )}
               </label>
-              <input
-                id="vendorNameInput"
-                type="text"
-                value={vendorName}
-                onChange={(e) => {
-                  setVendorName(e.target.value);
-                  if (formError && e.target.value.trim()) setFormError(null);
-                }}
-                placeholder="مثال: فروشگاه مواد غذایی نمونه / اداره برق و گاز / اینترنت مخابرات"
-                className={`w-full px-3 py-2 bg-white border rounded-xl text-xs outline-hidden transition-all ${
-                  formError && !vendorName.trim()
-                    ? 'border-rose-400 ring-2 ring-rose-200 bg-rose-50/30'
-                    : 'border-slate-300 focus:ring-2 focus:ring-emerald-500'
-                }`}
-              />
+
+              <div className="relative">
+                <input
+                  id="vendorNameInput"
+                  type="text"
+                  value={vendorName}
+                  onFocus={() => setShowVendorSuggestions(true)}
+                  onChange={(e) => {
+                    setVendorName(e.target.value);
+                    setShowVendorSuggestions(true);
+                    if (formError && e.target.value.trim()) setFormError(null);
+                  }}
+                  placeholder="نام فروشگاه، تأمین‌کننده یا سازمان (مثلاً: هایپرمارکت باران / اداره برق)..."
+                  className={`w-full px-3 py-2 bg-white border rounded-xl text-xs outline-hidden transition-all pl-8 ${
+                    formError && !vendorName.trim()
+                      ? 'border-rose-400 ring-2 ring-rose-200 bg-rose-50/30'
+                      : 'border-slate-300 focus:ring-2 focus:ring-emerald-500'
+                  }`}
+                  autoComplete="off"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3 pointer-events-none" />
+              </div>
+
+              {/* Vendor suggestions dropdown */}
+              {showVendorSuggestions && filteredVendorSuggestions.length > 0 && (
+                <div className="absolute z-30 mt-1 w-full bg-white border border-emerald-700/20 rounded-2xl shadow-xl max-h-56 overflow-y-auto p-1.5 animate-in fade-in duration-100">
+                  <div className="text-[10px] font-bold text-slate-400 px-2.5 py-1 flex items-center justify-between border-b border-slate-100 mb-1">
+                    <span>فروشندگان و طرف‌حساب‌های قبلی</span>
+                    <span>{filteredVendorSuggestions.length} مورد</span>
+                  </div>
+                  {filteredVendorSuggestions.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setVendorName(v.name);
+                        setShowVendorSuggestions(false);
+                        if (formError) setFormError(null);
+                      }}
+                      className="w-full text-right px-2.5 py-2 hover:bg-emerald-50 rounded-xl text-xs flex items-center justify-between group transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Store className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="font-bold text-slate-800 group-hover:text-emerald-800">{v.name}</span>
+                        {v.category && (
+                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                            {v.category}
+                          </span>
+                        )}
+                      </div>
+                      {v.phone && (
+                        <span className="text-[10px] font-mono text-slate-400 dir-ltr">
+                          {v.phone}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* New Vendor Info Pill */}
+              {vendorName.trim() && !isExactExistingVendor && (
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded-xl px-2.5 py-1">
+                  <span className="text-emerald-600">✨</span>
+                  <span>فروشنده جدید: <strong>{vendorName.trim()}</strong> (پس از ثبت، به فهرست فروشندگان اضافه می‌شود)</span>
+                </div>
+              )}
+
               {formError && !vendorName.trim() && (
                 <span className="text-[11px] font-bold text-rose-600 mt-1 block">
                   ⚠️ نام فروشنده الزامی است
@@ -728,6 +882,80 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
             >
               متوجه شدم و اصلاح می‌کنم
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Success Confirmation Modal (Requirement د) */}
+      {savedPurchaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border-2 border-emerald-400 text-center animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 border border-emerald-200 shadow-sm">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+
+            <h3 className="text-lg font-black text-slate-900 mb-1">
+              ثبت موفقیت‌آمیز فاکتور خرید
+            </h3>
+            <p className="text-xs text-slate-500 mb-5">
+              فاکتور خرید کالا و هزینه‌ها با موفقیت در دیتابیس اقامتگاه ذخیره شد.
+            </p>
+
+            {/* Quick Invoice Info Card */}
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 text-xs space-y-2 mb-6 text-right">
+              <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                <span className="text-slate-600 font-bold">شماره فاکتور:</span>
+                <span className="font-mono font-black text-emerald-950">{savedPurchaseModal.serialNumber}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                <span className="text-slate-600 font-bold">نام فروشنده / طرف‌حساب:</span>
+                <span className="font-bold text-slate-900">{savedPurchaseModal.vendorName}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-emerald-100">
+                <span className="text-slate-600 font-bold">تاریخ فاکتور:</span>
+                <span className="font-bold text-slate-800">{savedPurchaseModal.date}</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-600 font-bold">مبلغ نهایی پرداخت شده:</span>
+                <span className="font-black text-emerald-800 text-sm">
+                  {formatPersianPrice(savedPurchaseModal.totalPaid || savedPurchaseModal.totalAmount)} تومان
+                </span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2.5">
+              {onNavigateToList && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSavedPurchaseModal(null);
+                    onNavigateToList();
+                  }}
+                  className="w-full py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>مشاهده در لیست فاکتورهای خرید</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleResetForNewPurchaseInvoice}
+                className="w-full py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-amber-800" />
+                <span>صدور فاکتور خرید جدید</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSavedPurchaseModal(null)}
+                className="w-full py-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+              >
+                بستن و ماندن در همین فرم
+              </button>
+            </div>
           </div>
         </div>
       )}

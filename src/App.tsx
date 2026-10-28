@@ -12,6 +12,7 @@ import {
   WagePayment,
   Investor,
   InvestorPayout,
+  Vendor,
 } from './types';
 import {
   fetchSettings,
@@ -54,6 +55,8 @@ import {
   fetchInvestorPayouts,
   saveInvestorPayout,
   deleteInvestorPayout,
+  fetchVendors,
+  saveVendor,
   DEFAULT_SETTINGS,
 } from './services/dbService';
 import { getCurrentJalaliDate } from './utils/persianDate';
@@ -93,6 +96,7 @@ export default function App() {
   const [wagePayments, setWagePayments] = useState<WagePayment[]>([]);
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [investorPayouts, setInvestorPayouts] = useState<InvestorPayout[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
 
   // Edit / Print State
   const [editingSalesInvoice, setEditingSalesInvoice] = useState<SalesInvoice | null>(null);
@@ -104,7 +108,7 @@ export default function App() {
     async function loadData() {
       setLoading(true);
       try {
-        const [st, cats, pcats, its, pits, sales, purchases, gst, wtxs, chq, wgs, invs, payouts] = await Promise.all([
+        const [st, cats, pcats, its, pits, sales, purchases, gst, wtxs, chq, wgs, invs, payouts, vnds] = await Promise.all([
           fetchSettings(),
           fetchCategories(),
           fetchPurchaseCategories(),
@@ -118,6 +122,7 @@ export default function App() {
           fetchWagePayments(),
           fetchInvestors(),
           fetchInvestorPayouts(),
+          fetchVendors(),
         ]);
 
         setSettings(st);
@@ -133,6 +138,7 @@ export default function App() {
         setWagePayments(wgs);
         setInvestors(invs);
         setInvestorPayouts(payouts);
+        setVendors(vnds);
       } catch (err) {
         console.error('Error loading initial data:', err);
       } finally {
@@ -265,7 +271,7 @@ export default function App() {
     ]);
     setSalesInvoices(updatedInvoices);
     setGuests(updatedGuests);
-    setEditingSalesInvoice(null);
+    setEditingSalesInvoice(saved);
     return saved;
   };
 
@@ -308,10 +314,13 @@ export default function App() {
   // Handlers for Purchase Invoices
   const handleSavePurchaseInvoice = async (inv: Partial<PurchaseInvoice>): Promise<PurchaseInvoice> => {
     const saved = await savePurchaseInvoice(inv);
-    const updated = await fetchPurchaseInvoices();
-    setPurchaseInvoices(updated);
-    setEditingPurchaseInvoice(null);
-    setActiveTab('purchase_invoices_list');
+    const [updatedInvoices, updatedVendors] = await Promise.all([
+      fetchPurchaseInvoices(),
+      fetchVendors()
+    ]);
+    setPurchaseInvoices(updatedInvoices);
+    setVendors(updatedVendors);
+    setEditingPurchaseInvoice(saved);
     return saved;
   };
 
@@ -501,9 +510,11 @@ export default function App() {
             settings={settings}
             existingItems={purchaseItems}
             categories={purchaseCategories}
+            existingVendors={vendors}
             invoiceToEdit={editingPurchaseInvoice}
             onSaveInvoice={handleSavePurchaseInvoice}
             onAutoCreatePurchaseItem={handleAutoCreatePurchaseItem}
+            onNavigateToList={() => setActiveTab('purchase_invoices_list')}
             onCancelEdit={
               editingPurchaseInvoice
                 ? () => {

@@ -68,6 +68,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 }) => {
   const customerTitle = settings.customerTitle || 'مهمان';
 
+  const [currentInvoiceId, setCurrentInvoiceId] = useState<string | undefined>(invoiceToEdit?.id);
+
   const [serialNumber, setSerialNumber] = useState<string>(() => {
     if (invoiceToEdit?.serialNumber) return invoiceToEdit.serialNumber;
     const pastSerials = existingInvoices.map((inv) => inv.serialNumber).filter(Boolean);
@@ -139,6 +141,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
   useEffect(() => {
     if (invoiceToEdit) {
+      setCurrentInvoiceId(invoiceToEdit.id);
       setSerialNumber(invoiceToEdit.serialNumber);
       setDate(invoiceToEdit.date);
       setStatus(invoiceToEdit.status || invoiceToEdit.invoiceKind || 'FINAL');
@@ -594,7 +597,7 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
       }
 
       const saved = await onSaveInvoice({
-        id: invoiceToEdit?.id,
+        id: currentInvoiceId || invoiceToEdit?.id,
         serialNumber: serialNumber.trim() || `INV-${Math.floor(1000 + Math.random() * 9000)}`,
         date: date || getCurrentJalaliDate(),
         status,
@@ -617,6 +620,12 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
         paid: isFullySettled || paid,
       });
 
+      // Retain the saved invoice ID and details so that subsequent edits, payments, or item changes update this invoice
+      setCurrentInvoiceId(saved.id);
+      setSerialNumber(saved.serialNumber);
+      if (saved.guestId) setGuestId(saved.guestId);
+      if (saved.payments) setPayments(saved.payments);
+
       if (shouldPrintAfter && onPrintInvoice) {
         onPrintInvoice(saved);
       } else {
@@ -633,6 +642,8 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
   // Reset form for a brand new invoice
   const handleResetForNewInvoice = () => {
+    setCurrentInvoiceId(undefined);
+    if (onCancelEdit) onCancelEdit();
     setSavedInvoiceModal(null);
     const pastSerials = existingInvoices.map((inv) => inv.serialNumber).filter(Boolean);
     setSerialNumber(generateNextInvoiceSerialNumber(pastSerials));

@@ -22,7 +22,8 @@ import {
   WagePayment,
   BudgetRowConfig,
   Investor,
-  InvestorPayout
+  InvestorPayout,
+  Vendor
 } from '../types';
 import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate';
 
@@ -159,6 +160,13 @@ export const DEFAULT_GUESTS: Guest[] = [
     tags: ['عکاسی', 'تور گلاب‌گیری'],
     createdAt: '1403/03/15'
   }
+];
+
+export const DEFAULT_VENDORS: Vendor[] = [
+  { id: 'vendor-1', name: 'هایپرمارکت و خواربار باران برزک', phone: '09132619001', category: 'مواد غذایی و پذیرایی' },
+  { id: 'vendor-2', name: 'قصابی و پروتئینی برادران برزکی', phone: '09132619002', category: 'گوشت و مرغ' },
+  { id: 'vendor-3', name: 'ابزارآلات و تأسیسات سنتی کاشان', phone: '09133611122', category: 'تعمیر و نگهداری' },
+  { id: 'vendor-4', name: 'اداره آب، برق و گاز برزک', phone: '', category: 'قبوض و انرژی' }
 ];
 
 export const DEFAULT_INVESTORS: Investor[] = [
@@ -1079,7 +1087,17 @@ export async function fetchSalesInvoices(): Promise<SalesInvoice[]> {
 }
 
 export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<SalesInvoice> {
-  const id = invoice.id || `inv-s-${Date.now()}`;
+  const currentList = getLocalCache<SalesInvoice[]>('sales_invoices', []);
+  let targetId = invoice.id;
+  if (!targetId && invoice.serialNumber) {
+    const matched = currentList.find(
+      (inv) => inv.serialNumber.trim() === invoice.serialNumber!.trim()
+    );
+    if (matched) {
+      targetId = matched.id;
+    }
+  }
+  const id = targetId || `inv-s-${Date.now()}`;
   unmarkDeleted('sales_invoices', id);
   const totalPayable = Number(invoice.totalPayable) || 0;
   const payments = invoice.payments || [];
@@ -1296,7 +1314,17 @@ export async function fetchPurchaseInvoices(): Promise<PurchaseInvoice[]> {
 }
 
 export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Promise<PurchaseInvoice> {
-  const id = invoice.id || `inv-p-${Date.now()}`;
+  const currentList = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []);
+  let targetId = invoice.id;
+  if (!targetId && invoice.serialNumber) {
+    const matched = currentList.find(
+      (inv) => inv.serialNumber.trim() === invoice.serialNumber!.trim()
+    );
+    if (matched) {
+      targetId = matched.id;
+    }
+  }
+  const id = targetId || `inv-p-${Date.now()}`;
   unmarkDeleted('purchase_invoices', id);
   const totalAmount = Number(invoice.totalPaid || invoice.totalAmount) || 0;
   const payments = invoice.payments || [];
@@ -1326,9 +1354,9 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
     id,
     serialNumber: invoice.serialNumber || `PUR-${Math.floor(1000 + Math.random() * 9000)}`,
     date: invoice.date || getCurrentJalaliDate(),
-    vendorName: invoice.vendorName || '',
-    vendorPhone: invoice.vendorPhone || '',
-    notes: invoice.notes || '',
+    vendorName: (invoice.vendorName || '').trim(),
+    vendorPhone: (invoice.vendorPhone || '').trim(),
+    notes: (invoice.notes || '').trim(),
     items: cleanItems,
     totalAmount: Number(invoice.totalAmount) || 0,
     totalDiscount: Number(invoice.totalDiscount) || 0,
@@ -1342,6 +1370,24 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
     updatedAt: new Date().toISOString()
   };
 
+  // Auto register vendor in vendors catalog if not already present (Requirement ب)
+  if (invoiceObj.vendorName) {
+    try {
+      const vendors = getLocalCache<Vendor[]>('vendors', DEFAULT_VENDORS);
+      const normName = normalizePersianText(invoiceObj.vendorName);
+      const exists = vendors.some((v) => normalizePersianText(v.name) === normName);
+      if (!exists) {
+        await saveVendor({
+          name: invoiceObj.vendorName,
+          phone: invoiceObj.vendorPhone || '',
+          notes: `ثبت خودکار همزمان با صدور فاکتور خرید ${invoiceObj.serialNumber}`
+        });
+      }
+    } catch (e) {
+      console.warn('Auto vendor sync notice:', e);
+    }
+  }
+
   const list = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []);
   const idx = list.findIndex(i => i.id === id);
   if (idx >= 0) list[idx] = invoiceObj;
@@ -1353,6 +1399,69 @@ export async function savePurchaseInvoice(invoice: Partial<PurchaseInvoice>): Pr
   });
   syncToD1('purchase_invoices', invoiceObj);
   return invoiceObj;
+}
+
+// --- Vendor Operations (Requirement ب) ---
+export async function fetchVendors(): Promise<Vendor[]> {
+  const cached = getLocalCache<Vendor[]>('vendors', DEFAULT_VENDORS);
+  try {
+    const q = query(collection(db, 'vendors'));
+    const snap = await safeFirestoreOp(() => getDocs(q));
+    const remoteList: Vendor[] = [];
+    if (snap && !snap.empty) {
+      snap.forEach((d) => remoteList.push({ id: d.id, ...d.data() } as Vendor));
+    }
+    const merged = mergeCollections('vendors', cached, remoteList);
+
+    // Also collect vendors from all existing purchase invoices
+    const purchaseInvoices = getLocalCache<PurchaseInvoice[]>('purchase_invoices', []);
+    purchaseInvoices.forEach((inv) => {
+      const vName = (inv.vendorName || '').trim();
+      if (vName && !merged.some((v) => normalizePersianText(v.name) === normalizePersianText(vName))) {
+        merged.push({
+          id: `vendor-auto-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: vName,
+          phone: inv.vendorPhone || '',
+          createdAt: inv.date || getCurrentJalaliDate()
+        });
+      }
+    });
+
+    merged.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    setLocalCache('vendors', merged);
+    return merged;
+  } catch {
+    return cached;
+  }
+}
+
+export async function saveVendor(vendor: Partial<Vendor>): Promise<Vendor> {
+  const id = vendor.id || `vendor-${Date.now()}`;
+  unmarkDeleted('vendors', id);
+  const vendorObj: Vendor = {
+    id,
+    name: (vendor.name || 'فروشنده جدید').trim(),
+    phone: (vendor.phone || '').trim(),
+    category: (vendor.category || '').trim(),
+    notes: (vendor.notes || '').trim(),
+    createdAt: vendor.createdAt || getCurrentJalaliDate()
+  };
+
+  const list = getLocalCache<Vendor[]>('vendors', DEFAULT_VENDORS);
+  const idx = list.findIndex(
+    (v) => v.id === id || normalizePersianText(v.name) === normalizePersianText(vendorObj.name)
+  );
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...vendorObj };
+  } else {
+    list.push(vendorObj);
+  }
+  setLocalCache('vendors', list);
+
+  safeFirestoreOp(async () => {
+    await setDoc(doc(db, 'vendors', id), sanitizeForFirestore(vendorObj), { merge: true });
+  });
+  return vendorObj;
 }
 
 export async function deletePurchaseInvoice(id: string): Promise<void> {

@@ -219,7 +219,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     }
   }, [allExpenseCategories, isExpenseInitialized]);
 
-  // Pre-calculate raw breakdown by income category in date range (to show amount in the selectors)
+  // Pre-calculate raw breakdown by income category in date range (strictly paid amounts per Requirement ج)
   const incomeCategorySums = useMemo(() => {
     const sums: { [catId: string]: number } = {};
     allIncomeCategories.forEach((cat) => {
@@ -227,13 +227,22 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     });
 
     filteredSales.forEach((inv) => {
+      const invTotal = Number(inv.totalPayable) || 0;
+      const invPaid = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? invTotal : 0);
+      
+      // Requirement (ج): Unpaid invoices must NOT be counted into revenue. Only actual paid amounts count.
+      if (invPaid <= 0) return;
+
+      const paidRatio = invTotal > 0 ? Math.min(1, invPaid / invTotal) : 1;
+
       inv.items?.forEach((item) => {
         const resolved = resolveSalesCategory(item, categories, items);
         const catId = resolved ? resolved.id : (
           allIncomeCategories.find((c) => c.name === item.categoryName)?.id || allIncomeCategories[0]?.id
         );
         if (catId) {
-          sums[catId] = (sums[catId] || 0) + (item.payableAmount || 0);
+          const itemPaid = (Number(item.payableAmount) || 0) * paidRatio;
+          sums[catId] = (sums[catId] || 0) + itemPaid;
         }
       });
     });
@@ -413,6 +422,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     let grandTotal = 0;
 
     filteredSales.forEach((inv) => {
+      const invTotal = Number(inv.totalPayable) || 0;
+      const invPaid = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? invTotal : 0);
+      if (invPaid <= 0) return;
+      const paidRatio = invTotal > 0 ? Math.min(1, invPaid / invTotal) : 1;
+
       inv.items?.forEach((item) => {
         const resolved = resolveSalesCategory(item, categories, items);
         const catName = resolved ? resolved.name : (item.categoryName || 'اقلام و خدمات متفرقه');
@@ -420,7 +434,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         if (!map[catName]) {
           map[catName] = { totalAmount: 0, itemCount: 0 };
         }
-        const amt = item.payableAmount || 0;
+        const amt = (item.payableAmount || 0) * paidRatio;
         map[catName].totalAmount += amt;
         map[catName].itemCount += item.quantity || 1;
         grandTotal += amt;
@@ -461,6 +475,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     let grandTotal = 0;
 
     filteredSales.forEach((inv) => {
+      const invTotal = Number(inv.totalPayable) || 0;
+      const invPaid = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? invTotal : 0);
+      if (invPaid <= 0) return;
+      const paidRatio = invTotal > 0 ? Math.min(1, invPaid / invTotal) : 1;
+
       inv.items?.forEach((item) => {
         const key = `${item.itemName.trim()}-${item.unit.trim()}`;
         const resolved = resolveSalesCategory(item, categories, items);
@@ -475,7 +494,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             totalAmount: 0,
           };
         }
-        const amt = item.payableAmount || 0;
+        const amt = (item.payableAmount || 0) * paidRatio;
         map[key].qty += item.quantity || 0;
         map[key].totalAmount += amt;
         grandTotal += amt;
@@ -692,7 +711,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-slate-600 font-bold shrink-0">از:</span>
-            <div className="w-48 sm:w-52 min-w-[185px]">
+            <div className="w-56 sm:w-64 min-w-[220px]">
               <PersianDatePicker
                 placeholder="۱۴۰۳/۰۱/۰۱"
                 value={startDate}
@@ -705,7 +724,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-slate-600 font-bold shrink-0">تا:</span>
-            <div className="w-48 sm:w-52 min-w-[185px]">
+            <div className="w-56 sm:w-64 min-w-[220px]">
               <PersianDatePicker
                 placeholder="۱۴۰۳/۱۲/۲۹"
                 value={endDate}

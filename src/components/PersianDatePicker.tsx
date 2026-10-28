@@ -221,7 +221,7 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
       {/* Trigger Input */}
       <div
         onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white cursor-pointer select-none transition-all hover:border-amber-700/60 focus-within:ring-2 focus-within:ring-amber-700 min-w-[170px] ${
+        className={`flex items-center justify-between gap-2 px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white cursor-pointer select-none transition-all hover:border-amber-700/60 focus-within:ring-2 focus-within:ring-amber-700 min-w-[195px] ${
           disabled ? 'opacity-50 cursor-not-allowed bg-slate-100' : ''
         } ${inputClassName}`}
       >
@@ -230,12 +230,12 @@ export const PersianDatePicker: React.FC<PersianDatePickerProps> = ({
           {displayFormatted ? (
             <span
               dir="ltr"
-              className="font-bold text-slate-800 font-mono tracking-normal text-xs sm:text-[13px] whitespace-nowrap tabular-nums text-start"
+              className="font-bold text-slate-900 font-mono tracking-wider text-xs sm:text-[13px] whitespace-nowrap tabular-nums text-start shrink-0"
             >
               {displayFormatted}
             </span>
           ) : (
-            <span className="text-slate-400 truncate text-[11px]">{placeholder}</span>
+            <span className="text-slate-400 truncate text-[11px] shrink-0">{placeholder}</span>
           )}
         </div>
 

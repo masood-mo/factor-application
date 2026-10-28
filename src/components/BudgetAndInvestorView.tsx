@@ -305,8 +305,16 @@ export function BudgetAndInvestorView({
   let investorExemptRevenue = 0;
 
   inRangeSales.forEach((inv) => {
+    const totalPayable = Number(inv.totalPayable) || 0;
+    const paidAmount = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? totalPayable : 0);
+    // Requirement (ج): Unpaid invoices must NOT be counted into revenue. Only actual paid amounts count.
+    if (paidAmount <= 0) return;
+
+    const ratio = totalPayable > 0 ? Math.min(1, paidAmount / totalPayable) : 1;
+
     (inv.items || []).forEach((item) => {
-      const itemAmount = Number(item.payableAmount ?? item.totalPrice) || 0;
+      const rawItemAmount = Number(item.payableAmount ?? item.totalPrice) || 0;
+      const itemAmount = rawItemAmount * ratio;
       const matchedCat = resolveSalesCategory(item, categories, items);
       const catId = matchedCat ? matchedCat.id : 'other';
       salesByCategory[catId] = (salesByCategory[catId] || 0) + itemAmount;
@@ -321,9 +329,11 @@ export function BudgetAndInvestorView({
     });
   });
 
-  // Calculate In-Scope Sales Revenue for Overall Overview
+  // Calculate In-Scope Sales Revenue for Overall Overview (Strictly paid amounts per Requirement ج)
   const totalInScopeSalesRevenue = inRangeSales.reduce((sum, inv) => {
-    return sum + (Number(inv.totalPayable) || 0);
+    const totalPayable = Number(inv.totalPayable) || 0;
+    const paidAmount = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? totalPayable : 0);
+    return sum + paidAmount;
   }, 0);
 
   // List of all sales categories for display & budget selection
@@ -603,7 +613,7 @@ export function BudgetAndInvestorView({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-slate-500 font-bold shrink-0">از:</span>
-            <div className="w-48 sm:w-52 min-w-[185px]">
+            <div className="w-56 sm:w-64 min-w-[220px]">
               <PersianDatePicker
                 value={startDate}
                 onChange={(newD) => {
@@ -618,7 +628,7 @@ export function BudgetAndInvestorView({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-slate-500 font-bold shrink-0">تا:</span>
-            <div className="w-48 sm:w-52 min-w-[185px]">
+            <div className="w-56 sm:w-64 min-w-[220px]">
               <PersianDatePicker
                 value={endDate}
                 onChange={(newD) => {
