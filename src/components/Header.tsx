@@ -146,8 +146,8 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           id: 'investor_payouts' as ActiveTab,
-          label: 'پرداخت سود سرمایه‌گذار',
-          desc: 'معرفی سرمایه‌گذاران و ثبت پرداخت سود',
+          label: 'محاسبه و پرداخت سود سرمایه‌گذار',
+          desc: 'محاسبه سود، تفکیک دسته‌ها، تقسیم سهم و تسویه',
           icon: Award
         }
       ]
@@ -168,8 +168,8 @@ export const Header: React.FC<HeaderProps> = ({
         },
         {
           id: 'budget_investor' as ActiveTab,
-          label: 'بودجه کل و سرمایه‌گذار',
-          desc: 'محاسبه سهم سود، درآمد و هزینه‌ها',
+          label: 'تحلیل ردیف‌های بودجه مصوب',
+          desc: 'سنجش انحراف از بودجه مصوب و هزینه‌های واقعی',
           icon: Calculator
         }
       ]

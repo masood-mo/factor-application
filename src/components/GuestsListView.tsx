@@ -16,10 +16,12 @@ import {
   ArrowDownLeft,
   X,
   Check,
-  CreditCard
+  CreditCard,
+  ExternalLink
 } from 'lucide-react';
 import { Guest, SalesInvoice, WalletTransaction } from '../types';
 import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
+import { getInvoiceUrl, openInvoiceInNewTab } from '../utils/invoiceUrl';
 
 interface GuestsListViewProps {
   guests: Guest[];
@@ -30,6 +32,7 @@ interface GuestsListViewProps {
   onDeleteGuest: (id: string) => Promise<void>;
   onRecordWalletTransaction: (tx: Partial<WalletTransaction>) => Promise<WalletTransaction>;
   onIssueInvoiceForGuest: (guest: Guest) => void;
+  onViewInvoice?: (invoice: SalesInvoice) => void;
 }
 
 export function GuestsListView({
@@ -40,7 +43,8 @@ export function GuestsListView({
   onSaveGuest,
   onDeleteGuest,
   onRecordWalletTransaction,
-  onIssueInvoiceForGuest
+  onIssueInvoiceForGuest,
+  onViewInvoice
 }: GuestsListViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGuestForProfile, setSelectedGuestForProfile] = useState<Guest | null>(null);
@@ -371,29 +375,52 @@ export function GuestsListView({
                   );
                 }
                 return (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {guestStats.invoices.map((inv) => (
-                      <div
-                        key={inv.id}
-                        className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-slate-700">{inv.serialNumber}</span>
-                          <span className="text-slate-600 font-bold">{formatPersianDate(inv.date)}</span>
-                          <span className="text-slate-600">{inv.items.length} ردیف</span>
+                  <div className="space-y-2 max-h-56 overflow-y-auto">
+                    {guestStats.invoices.map((inv) => {
+                      const url = getInvoiceUrl(inv.id, 'sales');
+                      return (
+                        <div
+                          key={inv.id}
+                          onClick={() => {
+                            const win = openInvoiceInNewTab(inv.id, 'sales');
+                            if (!win && onViewInvoice) onViewInvoice(inv);
+                          }}
+                          className="flex items-center justify-between p-3 bg-slate-50 hover:bg-amber-50/70 border border-slate-200 hover:border-amber-300 rounded-xl text-xs transition-all cursor-pointer group"
+                          title="کلیک برای باز کردن فاکتور در تب جدید"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-black text-amber-900 group-hover:text-amber-950 flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-amber-800" />
+                              <span>{inv.serialNumber}</span>
+                            </span>
+                            <span className="text-slate-600 font-bold">{formatPersianDate(inv.date)}</span>
+                            <span className="text-slate-500 font-medium">{inv.items.length} ردیف</span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold font-mono text-slate-900">
+                              {formatPersianPrice(inv.totalPayable)} تومان
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              inv.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {inv.paid ? 'تسویه شده' : 'معوق'}
+                            </span>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1.5 bg-white group-hover:bg-amber-100 text-amber-800 rounded-lg border border-slate-200 group-hover:border-amber-300 transition-all flex items-center gap-1 text-[11px] font-bold shadow-2xs"
+                              title="باز کردن فاکتور در تب جدید مرورگر"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                              <span className="hidden sm:inline">تب جدید</span>
+                            </a>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold font-mono text-slate-900">
-                            {formatPersianPrice(inv.totalPayable)} تومان
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            inv.paid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                          }`}>
-                            {inv.paid ? 'تسویه شده' : 'معوق'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}

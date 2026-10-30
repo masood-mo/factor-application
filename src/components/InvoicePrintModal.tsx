@@ -21,21 +21,25 @@ import {
   Tag,
   Loader2,
   AlertCircle,
-  FileDown
+  FileDown,
+  ExternalLink
 } from 'lucide-react';
+import { getInvoiceUrl } from '../utils/invoiceUrl';
 
 interface InvoicePrintModalProps {
   invoice: SalesInvoice | null;
   settings: LodgeSettings;
   onClose: () => void;
   onConvertToFinalInvoice?: (invoiceId: string) => Promise<void>;
+  standaloneMode?: boolean;
 }
 
 export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   invoice,
   settings,
   onClose,
-  onConvertToFinalInvoice
+  onConvertToFinalInvoice,
+  standaloneMode = false
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
   const [exportingPDF, setExportingPDF] = useState<boolean>(false);
@@ -244,22 +248,39 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   };
 
   const isProforma = invoice.status === 'PROFORMA';
+  const invoiceUrl = getInvoiceUrl(invoice.id, 'sales');
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-amber-900/20 overflow-hidden my-auto max-h-[95vh] flex flex-col">
-        
-        {/* Top Control Bar (Hidden on print) */}
-        <div className="no-print bg-slate-900 text-white p-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <Printer className="w-5 h-5 text-amber-300" />
-            <span className="text-xs sm:text-sm font-bold">
-              {isProforma ? `پیش‌فاکتور رسمی ${customerTitle}` : `فاکتور رسمی فروش اقامتگاه`}
-            </span>
-          </div>
+  const modalBody = (
+    <>
+      <div className={`bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-amber-900/20 overflow-hidden flex flex-col ${
+        standaloneMode ? 'my-4' : 'my-auto max-h-[95vh]'
+      }`}>
+      
+      {/* Top Control Bar (Hidden on print) */}
+      <div className="no-print bg-slate-900 text-white p-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <Printer className="w-5 h-5 text-amber-300" />
+          <span className="text-xs sm:text-sm font-bold">
+            {isProforma ? `پیش‌فاکتور رسمی ${customerTitle}` : `فاکتور رسمی فروش اقامتگاه`}
+          </span>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Convert Proforma to Final */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Open in new tab link */}
+          {!standaloneMode && (
+            <a
+              href={invoiceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold px-3 py-1.5 rounded-xl text-xs transition-all border border-slate-700"
+              title="مشاهده فاکتور در تب جدید مرورگر"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">باز کردن در تب جدید</span>
+            </a>
+          )}
+
+          {/* Convert Proforma to Final */}
             {isProforma && onConvertToFinalInvoice && (
               <button
                 onClick={async () => {
@@ -747,6 +768,16 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (standaloneMode) {
+    return modalBody;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      {modalBody}
     </div>
   );
 };

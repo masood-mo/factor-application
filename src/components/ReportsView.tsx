@@ -46,8 +46,12 @@ import {
   Filter,
   CheckCircle2,
   XCircle,
-  RotateCcw
+  RotateCcw,
+  ExternalLink,
+  Eye,
+  X
 } from 'lucide-react';
+import { getInvoiceUrl, openInvoiceInNewTab } from '../utils/invoiceUrl';
 
 interface ReportsViewProps {
   salesInvoices: SalesInvoice[];
@@ -58,6 +62,8 @@ interface ReportsViewProps {
   purchaseItems?: Item[];
   wagePayments?: WagePayment[];
   customerTitle?: string;
+  onViewSalesInvoice?: (invoice: SalesInvoice) => void;
+  onViewPurchaseInvoice?: (invoice: PurchaseInvoice) => void;
 }
 
 type ReportTabId =
@@ -79,6 +85,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   purchaseItems = [],
   wagePayments = [],
   customerTitle = 'مهمان',
+  onViewSalesInvoice,
+  onViewPurchaseInvoice,
 }) => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -307,6 +315,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   // =========================================================================
   // REPORT 1: PURCHASE REPORT BY ITEM (گزارش خرید بر اساس اقلام کالا)
   // =========================================================================
+  interface PurchasedItemInvoiceRef {
+    invoiceId: string;
+    serialNumber: string;
+    vendorName: string;
+    date: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    cost: number;
+  }
+
   interface PurchasedItemRow {
     name: string;
     category: string;
@@ -315,10 +334,20 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     totalCost: number;
     avgUnitPrice: number;
     percentage: number;
+    invoices: PurchasedItemInvoiceRef[];
   }
 
   const purchasedItemsList = useMemo<PurchasedItemRow[]>(() => {
-    const map: { [key: string]: { name: string; unit: string; qty: number; totalCost: number; category: string } } = {};
+    const map: {
+      [key: string]: {
+        name: string;
+        unit: string;
+        qty: number;
+        totalCost: number;
+        category: string;
+        invoices: PurchasedItemInvoiceRef[];
+      };
+    } = {};
     let totalAllPurchases = 0;
 
     filteredPurchases.forEach((inv) => {
@@ -334,12 +363,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             qty: 0,
             totalCost: 0,
             category: catName,
+            invoices: [],
           };
         }
         const cost = item.paidAmount || (item.quantity * item.unitPrice) || 0;
         map[key].qty += item.quantity || 0;
         map[key].totalCost += cost;
         totalAllPurchases += cost;
+
+        map[key].invoices.push({
+          invoiceId: inv.id,
+          serialNumber: inv.serialNumber,
+          vendorName: inv.vendorName,
+          date: inv.date,
+          quantity: item.quantity || 0,
+          unit: item.unit || 'عدد',
+          unitPrice: item.unitPrice || 0,
+          cost,
+        });
       });
     });
 
@@ -365,15 +406,31 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   // =========================================================================
   // REPORT 2: PURCHASE REPORT BY CATEGORY (گزارش خرید بر اساس دسته‌بندی کالاها)
   // =========================================================================
+  interface PurchaseCategoryInvoiceRef {
+    invoiceId: string;
+    serialNumber: string;
+    vendorName: string;
+    date: string;
+    itemCount: number;
+    totalCost: number;
+  }
+
   interface PurchaseCategoryRow {
     name: string;
     itemCount: number;
     totalCost: number;
     percentage: number;
+    invoices: PurchaseCategoryInvoiceRef[];
   }
 
   const purchaseCategoriesReportList = useMemo<PurchaseCategoryRow[]>(() => {
-    const map: { [catName: string]: { totalCost: number; itemCount: number } } = {};
+    const map: {
+      [catName: string]: {
+        totalCost: number;
+        itemCount: number;
+        invoicesMap: { [invId: string]: PurchaseCategoryInvoiceRef };
+      };
+    } = {};
     let grandTotal = 0;
 
     filteredPurchases.forEach((inv) => {
@@ -382,12 +439,25 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         const catName = resolved ? resolved.name : (item.categoryName || 'سایر ملزومات و خریدهای عمومی');
 
         if (!map[catName]) {
-          map[catName] = { totalCost: 0, itemCount: 0 };
+          map[catName] = { totalCost: 0, itemCount: 0, invoicesMap: {} };
         }
         const cost = item.paidAmount || (item.quantity * item.unitPrice) || 0;
         map[catName].totalCost += cost;
         map[catName].itemCount += item.quantity || 0;
         grandTotal += cost;
+
+        if (!map[catName].invoicesMap[inv.id]) {
+          map[catName].invoicesMap[inv.id] = {
+            invoiceId: inv.id,
+            serialNumber: inv.serialNumber,
+            vendorName: inv.vendorName,
+            date: inv.date,
+            itemCount: 0,
+            totalCost: 0,
+          };
+        }
+        map[catName].invoicesMap[inv.id].itemCount += item.quantity || 0;
+        map[catName].invoicesMap[inv.id].totalCost += cost;
       });
     });
 
@@ -397,6 +467,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         itemCount: data.itemCount,
         totalCost: data.totalCost,
         percentage: grandTotal > 0 ? Number(((data.totalCost / grandTotal) * 100).toFixed(1)) : 0,
+        invoices: Object.values(data.invoicesMap),
       }))
       .sort((a, b) => b.totalCost - a.totalCost);
   }, [filteredPurchases, purchaseCategories, purchaseItems]);
@@ -410,15 +481,31 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   // =========================================================================
   // REPORT 3: SALES REPORT BY CATEGORY (گزارش فروش بر اساس دسته‌بندی کالا)
   // =========================================================================
+  interface SalesCategoryInvoiceRef {
+    invoiceId: string;
+    serialNumber: string;
+    guestName: string;
+    date: string;
+    itemCount: number;
+    totalAmount: number;
+  }
+
   interface SalesCategoryRow {
     name: string;
     itemCount: number;
     totalAmount: number;
     percentage: number;
+    invoices: SalesCategoryInvoiceRef[];
   }
 
   const salesCategoriesReportList = useMemo<SalesCategoryRow[]>(() => {
-    const map: { [catName: string]: { totalAmount: number; itemCount: number } } = {};
+    const map: {
+      [catName: string]: {
+        totalAmount: number;
+        itemCount: number;
+        invoicesMap: { [invId: string]: SalesCategoryInvoiceRef };
+      };
+    } = {};
     let grandTotal = 0;
 
     filteredSales.forEach((inv) => {
@@ -432,12 +519,25 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         const catName = resolved ? resolved.name : (item.categoryName || 'اقلام و خدمات متفرقه');
 
         if (!map[catName]) {
-          map[catName] = { totalAmount: 0, itemCount: 0 };
+          map[catName] = { totalAmount: 0, itemCount: 0, invoicesMap: {} };
         }
         const amt = (item.payableAmount || 0) * paidRatio;
         map[catName].totalAmount += amt;
         map[catName].itemCount += item.quantity || 1;
         grandTotal += amt;
+
+        if (!map[catName].invoicesMap[inv.id]) {
+          map[catName].invoicesMap[inv.id] = {
+            invoiceId: inv.id,
+            serialNumber: inv.serialNumber,
+            guestName: inv.guestName,
+            date: inv.date,
+            itemCount: 0,
+            totalAmount: 0,
+          };
+        }
+        map[catName].invoicesMap[inv.id].itemCount += item.quantity || 1;
+        map[catName].invoicesMap[inv.id].totalAmount += amt;
       });
     });
 
@@ -447,6 +547,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         itemCount: data.itemCount,
         totalAmount: data.totalAmount,
         percentage: grandTotal > 0 ? Number(((data.totalAmount / grandTotal) * 100).toFixed(1)) : 0,
+        invoices: Object.values(data.invoicesMap),
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filteredSales, categories, items]);
@@ -460,6 +561,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   // =========================================================================
   // REPORT 4: SALES REPORT BY ITEM (گزارش فروش بر اساس اقلام کالا)
   // =========================================================================
+  interface SalesItemInvoiceRef {
+    invoiceId: string;
+    serialNumber: string;
+    guestName: string;
+    date: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    totalAmount: number;
+  }
+
   interface SalesItemRow {
     name: string;
     category: string;
@@ -468,10 +580,20 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
     totalAmount: number;
     avgUnitPrice: number;
     percentage: number;
+    invoices: SalesItemInvoiceRef[];
   }
 
   const salesItemsReportList = useMemo<SalesItemRow[]>(() => {
-    const map: { [key: string]: { name: string; category: string; unit: string; qty: number; totalAmount: number } } = {};
+    const map: {
+      [key: string]: {
+        name: string;
+        category: string;
+        unit: string;
+        qty: number;
+        totalAmount: number;
+        invoices: SalesItemInvoiceRef[];
+      };
+    } = {};
     let grandTotal = 0;
 
     filteredSales.forEach((inv) => {
@@ -492,12 +614,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             unit: item.unit || 'عدد',
             qty: 0,
             totalAmount: 0,
+            invoices: [],
           };
         }
         const amt = (item.payableAmount || 0) * paidRatio;
         map[key].qty += item.quantity || 0;
         map[key].totalAmount += amt;
         grandTotal += amt;
+
+        map[key].invoices.push({
+          invoiceId: inv.id,
+          serialNumber: inv.serialNumber,
+          guestName: inv.guestName,
+          date: inv.date,
+          quantity: item.quantity || 0,
+          unit: item.unit || 'عدد',
+          unitPrice: item.unitPrice || 0,
+          totalAmount: amt,
+        });
       });
     });
 
@@ -519,6 +653,123 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         normalizePersianText(item.category).includes(q)
     );
   }, [salesItemsReportList, searchSalesItem]);
+
+  // =========================================================================
+  // MULTI-INVOICE POPUP MODAL STATE & ACTIONS
+  // =========================================================================
+  interface InvoicesPopupItem {
+    id: string;
+    serialNumber: string;
+    partyName: string;
+    date: string;
+    detail?: string;
+    amount: number;
+  }
+
+  interface InvoicesPopupModalState {
+    title: string;
+    subtitle: string;
+    type: 'sales' | 'purchase';
+    invoices: InvoicesPopupItem[];
+  }
+
+  const [invoicesPopup, setInvoicesPopup] = useState<InvoicesPopupModalState | null>(null);
+
+  const handleOpenPurchaseInvoice = (invId: string) => {
+    const win = openInvoiceInNewTab(invId, 'purchase');
+    if (!win && onViewPurchaseInvoice) {
+      const inv = purchaseInvoices.find((p) => p.id === invId || p.serialNumber === invId);
+      if (inv) onViewPurchaseInvoice(inv);
+    }
+  };
+
+  const handleOpenSalesInvoice = (invId: string) => {
+    const win = openInvoiceInNewTab(invId, 'sales');
+    if (!win && onViewSalesInvoice) {
+      const inv = salesInvoices.find((s) => s.id === invId || s.serialNumber === invId);
+      if (inv) onViewSalesInvoice(inv);
+    }
+  };
+
+  const handlePurchasedItemRowClick = (item: PurchasedItemRow) => {
+    if (item.invoices.length === 1) {
+      handleOpenPurchaseInvoice(item.invoices[0].invoiceId);
+    } else if (item.invoices.length > 1) {
+      setInvoicesPopup({
+        title: `فاکتورهای خرید شامل «${item.name}»`,
+        subtitle: `${item.invoices.length} فاکتور خرید در بازه زمانی انتخابی`,
+        type: 'purchase',
+        invoices: item.invoices.map((inv) => ({
+          id: inv.invoiceId,
+          serialNumber: inv.serialNumber,
+          partyName: inv.vendorName,
+          date: inv.date,
+          detail: `${inv.quantity} ${inv.unit} (نرخ واحد: ${formatPersianPrice(inv.unitPrice)} تومان)`,
+          amount: inv.cost,
+        })),
+      });
+    }
+  };
+
+  const handleSalesItemRowClick = (item: SalesItemRow) => {
+    if (item.invoices.length === 1) {
+      handleOpenSalesInvoice(item.invoices[0].invoiceId);
+    } else if (item.invoices.length > 1) {
+      setInvoicesPopup({
+        title: `فاکتورهای فروش شامل «${item.name}»`,
+        subtitle: `${item.invoices.length} فاکتور فروش در بازه زمانی انتخابی`,
+        type: 'sales',
+        invoices: item.invoices.map((inv) => ({
+          id: inv.invoiceId,
+          serialNumber: inv.serialNumber,
+          partyName: inv.guestName,
+          date: inv.date,
+          detail: `${inv.quantity} ${inv.unit} (نرخ واحد: ${formatPersianPrice(inv.unitPrice)} تومان)`,
+          amount: inv.totalAmount,
+        })),
+      });
+    }
+  };
+
+  const handlePurchaseCategoryRowClick = (cat: PurchaseCategoryRow) => {
+    if (cat.invoices.length === 1) {
+      handleOpenPurchaseInvoice(cat.invoices[0].invoiceId);
+    } else if (cat.invoices.length > 1) {
+      setInvoicesPopup({
+        title: `فاکتورهای خرید دسته‌بندی «${cat.name}»`,
+        subtitle: `${cat.invoices.length} فاکتور خرید در بازه زمانی انتخابی`,
+        type: 'purchase',
+        invoices: cat.invoices.map((inv) => ({
+          id: inv.invoiceId,
+          serialNumber: inv.serialNumber,
+          partyName: inv.vendorName,
+          date: inv.date,
+          detail: `${inv.itemCount} قلم کالا`,
+          amount: inv.totalCost,
+        })),
+      });
+    }
+  };
+
+  const handleSalesCategoryRowClick = (cat: SalesCategoryRow) => {
+    if (cat.invoices.length === 1) {
+      handleOpenSalesInvoice(cat.invoices[0].invoiceId);
+    } else if (cat.invoices.length > 1) {
+      setInvoicesPopup({
+        title: `فاکتورهای فروش دسته‌بندی «${cat.name}»`,
+        subtitle: `${cat.invoices.length} فاکتور فروش در بازه زمانی انتخابی`,
+        type: 'sales',
+        invoices: cat.invoices.map((inv) => ({
+          id: inv.invoiceId,
+          serialNumber: inv.serialNumber,
+          partyName: inv.guestName,
+          date: inv.date,
+          detail: `${inv.itemCount} ردیف کالا / خدمت`,
+          amount: inv.totalAmount,
+        })),
+      });
+    }
+  };
 
   // =========================================================================
   // GUEST HISTORY REPORT
@@ -1115,18 +1366,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-3 py-2.5 text-center">مجموع تعداد اقلام</th>
                     <th className="px-4 py-2.5 font-bold text-rose-900">مجموع مبالغ هزینه شده (تومان)</th>
                     <th className="px-4 py-2.5">سهم از کل هزینه‌ها (%)</th>
+                    <th className="px-3 py-2.5 text-center">فاکتورها (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredPurchaseCategoriesReportList.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-slate-400">
+                      <td colSpan={6} className="text-center py-8 text-slate-400">
                         هیچ خریدی در این بازه زمانی با مشخصات جستجو شده یافت نشد.
                       </td>
                     </tr>
                   ) : (
                     filteredPurchaseCategoriesReportList.map((cat, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={idx}
+                        onClick={() => handlePurchaseCategoryRowClick(cat)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتورهای این دسته در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-semibold text-slate-400">{idx + 1}</td>
                         <td className="px-4 py-2.5 font-bold text-slate-800 flex items-center gap-2">
                           <Folder className="w-3.5 h-3.5 text-amber-700 shrink-0" />
@@ -1140,7 +1397,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="w-28 bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div className="w-24 bg-slate-200 h-2 rounded-full overflow-hidden">
                               <div
                                 className="bg-rose-600 h-full rounded-full transition-all"
                                 style={{ width: `${Math.min(cat.percentage, 100)}%` }}
@@ -1148,6 +1405,29 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                             </div>
                             <span className="font-bold text-slate-700 font-mono">{cat.percentage}%</span>
                           </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {cat.invoices.length === 1 ? (
+                            <a
+                              href={getInvoiceUrl(cat.invoices[0].invoiceId, 'purchase')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                              title="مشاهده فاکتور خرید در تب جدید"
+                            >
+                              <span>فاکتور {cat.invoices[0].serialNumber}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <button
+                              onClick={() => handlePurchaseCategoryRowClick(cat)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              title="مشاهده فاکتورهای این دسته"
+                            >
+                              <span>{cat.invoices.length} فاکتور</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -1169,6 +1449,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         تومان
                       </td>
                       <td className="px-4 py-3 font-mono text-slate-700">۱۰۰٪</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 )}
@@ -1227,18 +1508,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-3 py-2.5 font-bold text-slate-700">میانگین قیمت واحد (تومان)</th>
                     <th className="px-4 py-2.5 font-bold text-rose-900">مجموع هزینه کل (تومان)</th>
                     <th className="px-4 py-2.5 text-center">سهم از کل (%)</th>
+                    <th className="px-3 py-2.5 text-center">فاکتور خرید (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredPurchasedItemsList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-8 text-slate-400">
+                      <td colSpan={9} className="text-center py-8 text-slate-400">
                         هیچ کالای خریداری‌شده‌ای در این بازه زمانی با مشخصات جستجو شده یافت نشد.
                       </td>
                     </tr>
                   ) : (
                     filteredPurchasedItemsList.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={idx}
+                        onClick={() => handlePurchasedItemRowClick(item)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتور خرید این کالا در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-semibold text-slate-400">{idx + 1}</td>
                         <td className="px-4 py-2.5 font-bold text-slate-800 flex items-center gap-1.5">
                           <Package className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
@@ -1255,6 +1542,29 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         </td>
                         <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-700">
                           {item.percentage}%
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {item.invoices.length === 1 ? (
+                            <a
+                              href={getInvoiceUrl(item.invoices[0].invoiceId, 'purchase')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                              title="مشاهده فاکتور خرید در تب جدید"
+                            >
+                              <span>فاکتور {item.invoices[0].serialNumber}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <button
+                              onClick={() => handlePurchasedItemRowClick(item)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              title="مشاهده لیست فاکتورهای این کالا"
+                            >
+                              <span>{item.invoices.length} فاکتور</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -1273,6 +1583,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         تومان
                       </td>
                       <td className="px-4 py-3 text-center font-mono text-slate-700">۱۰۰٪</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 )}
@@ -1328,18 +1639,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-3 py-2.5 text-center">تعداد اقلام فروخته شده</th>
                     <th className="px-4 py-2.5 font-bold text-emerald-900">مبلغ کل فروش (تومان)</th>
                     <th className="px-4 py-2.5">سهم از کل فروش (%)</th>
+                    <th className="px-3 py-2.5 text-center">فاکتورها (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredSalesCategoriesReportList.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-slate-400">
+                      <td colSpan={6} className="text-center py-8 text-slate-400">
                         هیچ فروشی در این بازه زمانی با مشخصات جستجو شده یافت نشد.
                       </td>
                     </tr>
                   ) : (
                     filteredSalesCategoriesReportList.map((cat, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={idx}
+                        onClick={() => handleSalesCategoryRowClick(cat)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتورهای این دسته در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-semibold text-slate-400">{idx + 1}</td>
                         <td className="px-4 py-2.5 font-bold text-slate-800 flex items-center gap-2">
                           <Layers className="w-3.5 h-3.5 text-amber-800 shrink-0" />
@@ -1353,7 +1670,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="w-28 bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div className="w-24 bg-slate-200 h-2 rounded-full overflow-hidden">
                               <div
                                 className="bg-emerald-600 h-full rounded-full transition-all"
                                 style={{ width: `${Math.min(cat.percentage, 100)}%` }}
@@ -1361,6 +1678,29 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                             </div>
                             <span className="font-bold text-slate-700 font-mono">{cat.percentage}%</span>
                           </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {cat.invoices.length === 1 ? (
+                            <a
+                              href={getInvoiceUrl(cat.invoices[0].invoiceId, 'sales')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                              title="مشاهده فاکتور فروش در تب جدید"
+                            >
+                              <span>فاکتور {cat.invoices[0].serialNumber}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <button
+                              onClick={() => handleSalesCategoryRowClick(cat)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              title="مشاهده لیست فاکتورهای این دسته"
+                            >
+                              <span>{cat.invoices.length} فاکتور</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -1382,6 +1722,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         تومان
                       </td>
                       <td className="px-4 py-3 font-mono text-slate-700">۱۰۰٪</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 )}
@@ -1440,18 +1781,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-3 py-2.5 font-bold text-slate-700">میانگین نرخ واحد (تومان)</th>
                     <th className="px-4 py-2.5 font-bold text-emerald-900">مجموع مبلغ فروش (تومان)</th>
                     <th className="px-4 py-2.5 text-center">سهم از کل (%)</th>
+                    <th className="px-3 py-2.5 text-center">فاکتور فروش (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredSalesItemsReportList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-8 text-slate-400">
+                      <td colSpan={9} className="text-center py-8 text-slate-400">
                         هیچ کالا یا خدمتی در این بازه زمانی با مشخصات جستجو شده به فروش نرسیده است.
                       </td>
                     </tr>
                   ) : (
                     filteredSalesItemsReportList.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={idx}
+                        onClick={() => handleSalesItemRowClick(item)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتور فروش این کالا در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-semibold text-slate-400">{idx + 1}</td>
                         <td className="px-4 py-2.5 font-bold text-slate-800 flex items-center gap-1.5">
                           <ShoppingBag className="w-3.5 h-3.5 text-amber-800 shrink-0" />
@@ -1468,6 +1815,29 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         </td>
                         <td className="px-4 py-2.5 text-center font-mono font-bold text-slate-700">
                           {item.percentage}%
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          {item.invoices.length === 1 ? (
+                            <a
+                              href={getInvoiceUrl(item.invoices[0].invoiceId, 'sales')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                              title="مشاهده فاکتور فروش در تب جدید"
+                            >
+                              <span>فاکتور {item.invoices[0].serialNumber}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <button
+                              onClick={() => handleSalesItemRowClick(item)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              title="مشاهده فاکتورهای این کالا"
+                            >
+                              <span>{item.invoices.length} فاکتور</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -1486,6 +1856,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         تومان
                       </td>
                       <td className="px-4 py-3 text-center font-mono text-slate-700">۱۰۰٪</td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 )}
@@ -1525,18 +1896,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-3 py-2.5 font-extrabold text-emerald-950">پرداخت شده</th>
                     <th className="px-3 py-2.5 font-extrabold text-rose-950">مانده</th>
                     <th className="px-3 py-2.5 text-center">وضعیت تسویه</th>
+                    <th className="px-3 py-2.5 text-center">عملیات (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredSales.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-8 text-slate-400">
+                      <td colSpan={8} className="text-center py-8 text-slate-400">
                         هیچ فاکتور فروشی در این بازه زمانی ثبت نشده است.
                       </td>
                     </tr>
                   ) : (
                     filteredSales.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={inv.id}
+                        onClick={() => handleOpenSalesInvoice(inv.id)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتور در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-amber-900">
                           {inv.serialNumber}
                         </td>
@@ -1559,6 +1936,18 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                           >
                             {inv.paid ? 'تسویه کامل' : 'دارای مانده'}
                           </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <a
+                            href={getInvoiceUrl(inv.id, 'sales')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                            title="مشاهده فاکتور در تب جدید"
+                          >
+                            <span>مشاهده</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </td>
                       </tr>
                     ))
@@ -1598,18 +1987,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <th className="px-4 py-2.5">نام فروشنده / تامین‌کننده</th>
                     <th className="px-3 py-2.5 font-extrabold text-rose-900">مبلغ پرداخت شده</th>
                     <th className="px-3 py-2.5 text-center">وضعیت</th>
+                    <th className="px-3 py-2.5 text-center">عملیات (تب جدید)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredPurchases.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-8 text-slate-400">
+                      <td colSpan={6} className="text-center py-8 text-slate-400">
                         هیچ فاکتور خریدی در این بازه زمانی ثبت نشده است.
                       </td>
                     </tr>
                   ) : (
                     filteredPurchases.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-amber-50/20 transition-colors">
+                      <tr
+                        key={inv.id}
+                        onClick={() => handleOpenPurchaseInvoice(inv.id)}
+                        className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                        title="کلیک برای مشاهده فاکتور خرید در تب جدید"
+                      >
                         <td className="px-3 py-2.5 text-center font-mono font-bold text-emerald-800">
                           {inv.serialNumber}
                         </td>
@@ -1626,6 +2021,18 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                           >
                             {inv.paid ? 'تسویه شده' : 'معوق'}
                           </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <a
+                            href={getInvoiceUrl(inv.id, 'purchase')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                            title="مشاهده فاکتور در تب جدید"
+                          >
+                            <span>مشاهده</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </td>
                       </tr>
                     ))
@@ -1707,18 +2114,24 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         <th className="px-3 py-2.5">تعداد اقلام</th>
                         <th className="px-4 py-2.5 font-bold text-amber-950">مبلغ کل فاکتور</th>
                         <th className="px-3 py-2.5 text-center">وضعیت پرداخت</th>
+                        <th className="px-3 py-2.5 text-center">عملیات (تب جدید)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {selectedGuestInvoices.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center py-6 text-slate-400">
+                          <td colSpan={6} className="text-center py-6 text-slate-400">
                             هیچ فاکتوری برای این {customerTitle} در بازه زمانی مشخص شده یافت نشد.
                           </td>
                         </tr>
                       ) : (
                         selectedGuestInvoices.map((inv) => (
-                          <tr key={inv.id} className="hover:bg-amber-50/20 transition-colors">
+                          <tr
+                            key={inv.id}
+                            onClick={() => handleOpenSalesInvoice(inv.id)}
+                            className="hover:bg-amber-100/40 cursor-pointer transition-colors"
+                            title="کلیک برای مشاهده فاکتور در تب جدید"
+                          >
                             <td className="px-3 py-2.5 font-bold text-slate-800">
                               {formatPersianDate(inv.date)}
                             </td>
@@ -1738,6 +2151,18 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                                 {inv.paid ? 'تسویه شده' : 'معوق'}
                               </span>
                             </td>
+                            <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                              <a
+                                href={getInvoiceUrl(inv.id, 'sales')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-[11px] font-bold transition-colors shadow-2xs"
+                                title="مشاهده فاکتور در تب جدید"
+                              >
+                                <span>مشاهده</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -1754,6 +2179,98 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         )}
 
       </div>
+
+      {/* Multi-Invoice Popup Modal for Categories and Items */}
+      {invoicesPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-amber-50/60">
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-amber-800" />
+                  <span>{invoicesPopup.title}</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  {invoicesPopup.subtitle}
+                </p>
+              </div>
+              <button
+                onClick={() => setInvoicesPopup(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Invoices List */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-2.5 divide-y divide-slate-100">
+              {invoicesPopup.invoices.map((inv) => {
+                const url = getInvoiceUrl(inv.id, invoicesPopup.type);
+                return (
+                  <div
+                    key={inv.id}
+                    onClick={() => {
+                      if (invoicesPopup.type === 'purchase') {
+                        handleOpenPurchaseInvoice(inv.id);
+                      } else {
+                        handleOpenSalesInvoice(inv.id);
+                      }
+                    }}
+                    className="pt-2.5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl hover:bg-amber-50/70 border border-slate-100 hover:border-amber-300 transition-all cursor-pointer group"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-amber-900 text-xs">
+                          {invoicesPopup.type === 'purchase' ? 'فاکتور خرید' : 'فاکتور فروش'} #{inv.serialNumber}
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          • {formatPersianDate(inv.date)}
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-slate-800">
+                        {invoicesPopup.type === 'purchase' ? 'تامین‌کننده / فروشنده: ' : 'مهمان: '}
+                        <span className="text-slate-900 font-black">{inv.partyName}</span>
+                        {inv.detail && (
+                          <span className="text-slate-500 text-[11px] mr-2 font-normal">
+                            ({inv.detail})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-xs font-black font-mono text-slate-900">
+                        {formatPersianPrice(inv.amount)} تومان
+                      </span>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+                        title="باز کردن در تب جدید مرورگر"
+                      >
+                        <span>نمایش در تب جدید</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setInvoicesPopup(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                بستن پنجره
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

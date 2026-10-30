@@ -75,6 +75,7 @@ import { InvestorPayoutsView } from './components/InvestorPayoutsView';
 import { BudgetAndInvestorView } from './components/BudgetAndInvestorView';
 import { ReportsView } from './components/ReportsView';
 import { InvoicePrintModal } from './components/InvoicePrintModal';
+import { PurchaseInvoicePrintModal } from './components/PurchaseInvoicePrintModal';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -102,6 +103,7 @@ export default function App() {
   const [editingSalesInvoice, setEditingSalesInvoice] = useState<SalesInvoice | null>(null);
   const [editingPurchaseInvoice, setEditingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
   const [printingSalesInvoice, setPrintingSalesInvoice] = useState<SalesInvoice | null>(null);
+  const [printingPurchaseInvoice, setPrintingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
 
   // Fetch Initial Data
   useEffect(() => {
@@ -444,6 +446,86 @@ export default function App() {
     );
   }
 
+  // Check if opened as standalone view invoice in new tab (e.g. ?view_invoice=...&type=sales|purchase)
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const viewInvoiceId = urlParams.get('view_invoice') || urlParams.get('invoice_id') || urlParams.get('invoiceId');
+  const invoiceType = (urlParams.get('type') || 'sales').toLowerCase();
+
+  if (viewInvoiceId) {
+    if (invoiceType === 'purchase') {
+      const targetPurchase = purchaseInvoices.find(
+        (inv) => inv.id === viewInvoiceId || inv.serialNumber === viewInvoiceId
+      );
+      if (targetPurchase) {
+        return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center p-2 sm:p-6 dir-rtl font-sans antialiased">
+            <PurchaseInvoicePrintModal
+              invoice={targetPurchase}
+              settings={settings}
+              onClose={() => {
+                window.location.href = window.location.pathname;
+              }}
+              standaloneMode={true}
+            />
+          </div>
+        );
+      } else {
+        return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 dir-rtl font-sans antialiased">
+            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl text-center max-w-md w-full space-y-4 border border-slate-200">
+              <h2 className="text-base font-black text-rose-800">فاکتور خرید مورد نظر یافت نشد</h2>
+              <p className="text-xs text-slate-500 font-mono">شناسه یا شماره سریال: {viewInvoiceId}</p>
+              <button
+                onClick={() => {
+                  window.location.href = window.location.pathname;
+                }}
+                className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                بازگشت به صفحه اصلی برنامه
+              </button>
+            </div>
+          </div>
+        );
+      }
+    } else {
+      const targetSales = salesInvoices.find(
+        (inv) => inv.id === viewInvoiceId || inv.serialNumber === viewInvoiceId
+      );
+      if (targetSales) {
+        return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center p-2 sm:p-6 dir-rtl font-sans antialiased">
+            <InvoicePrintModal
+              invoice={targetSales}
+              settings={settings}
+              onClose={() => {
+                window.location.href = window.location.pathname;
+              }}
+              onConvertToFinalInvoice={handleConvertToFinalInvoice}
+              standaloneMode={true}
+            />
+          </div>
+        );
+      } else {
+        return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 dir-rtl font-sans antialiased">
+            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl text-center max-w-md w-full space-y-4 border border-slate-200">
+              <h2 className="text-base font-black text-rose-800">فاکتور فروش مورد نظر یافت نشد</h2>
+              <p className="text-xs text-slate-500 font-mono">شناسه یا شماره سریال: {viewInvoiceId}</p>
+              <button
+                onClick={() => {
+                  window.location.href = window.location.pathname;
+                }}
+                className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                بازگشت به صفحه اصلی برنامه
+              </button>
+            </div>
+          </div>
+        );
+      }
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col dir-rtl font-sans antialiased">
       
@@ -553,6 +635,7 @@ export default function App() {
             onSaveGuest={handleSaveGuest}
             onDeleteGuest={handleDeleteGuest}
             onRecordWalletTransaction={handleRecordWalletTransaction}
+            onViewInvoice={(inv) => setPrintingSalesInvoice(inv)}
             onIssueInvoiceForGuest={(guest) => {
               setEditingSalesInvoice({
                 id: '',
@@ -612,6 +695,8 @@ export default function App() {
             salesInvoices={salesInvoices}
             purchaseInvoices={purchaseInvoices}
             wagePayments={wagePayments}
+            categories={categories}
+            items={items}
             onSaveInvestor={handleSaveInvestor}
             onDeleteInvestor={handleDeleteInvestor}
             onSaveInvestorPayout={handleSaveInvestorPayout}
@@ -632,6 +717,7 @@ export default function App() {
             purchaseItems={purchaseItems}
             investorPayouts={investorPayouts}
             investors={investors}
+            onNavigateToPayouts={() => setActiveTab('investor_payouts')}
           />
         )}
 
@@ -672,6 +758,8 @@ export default function App() {
             purchaseItems={purchaseItems}
             wagePayments={wagePayments}
             customerTitle={settings.customerTitle || 'مهمان'}
+            onViewSalesInvoice={(inv) => setPrintingSalesInvoice(inv)}
+            onViewPurchaseInvoice={(inv) => setPrintingPurchaseInvoice(inv)}
           />
         )}
 
@@ -685,13 +773,22 @@ export default function App() {
         )}
       </main>
 
-      {/* Invoice Printable & Export View Modal */}
+      {/* Sales Invoice Printable & Export View Modal */}
       {printingSalesInvoice && (
         <InvoicePrintModal
           invoice={printingSalesInvoice}
           settings={settings}
           onClose={() => setPrintingSalesInvoice(null)}
           onConvertToFinalInvoice={handleConvertToFinalInvoice}
+        />
+      )}
+
+      {/* Purchase Invoice Printable & Export View Modal */}
+      {printingPurchaseInvoice && (
+        <PurchaseInvoicePrintModal
+          invoice={printingPurchaseInvoice}
+          settings={settings}
+          onClose={() => setPrintingPurchaseInvoice(null)}
         />
       )}
     </div>

@@ -14,17 +14,32 @@ import {
   Copy,
   DollarSign,
   TrendingUp,
+  TrendingDown,
   Percent,
   CheckCircle2,
   HelpCircle,
   Phone,
   Layers,
   ArrowRightLeft,
-  Loader2
+  Loader2,
+  Calculator,
+  CheckSquare,
+  Square,
+  AlertCircle,
+  Sparkles,
+  CheckCheck
 } from 'lucide-react';
-import { Investor, InvestorPayout, LodgeSettings, SalesInvoice, PurchaseInvoice, WagePayment } from '../types';
-import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
+import { Investor, InvestorPayout, LodgeSettings, SalesInvoice, PurchaseInvoice, WagePayment, Category, Item } from '../types';
+import {
+  formatPersianPrice,
+  getCurrentJalaliDate,
+  formatPersianDate,
+  getFirstDayOfMonthJalali,
+  getLastDayOfMonthJalali,
+  isDateInRange
+} from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
+import { resolveSalesCategory } from './BudgetAndInvestorView';
 
 interface InvestorPayoutsViewProps {
   investors: Investor[];
@@ -33,6 +48,8 @@ interface InvestorPayoutsViewProps {
   salesInvoices: SalesInvoice[];
   purchaseInvoices: PurchaseInvoice[];
   wagePayments: WagePayment[];
+  categories?: Category[];
+  items?: Item[];
   onSaveInvestor: (investor: Partial<Investor>) => Promise<Investor>;
   onDeleteInvestor: (id: string) => Promise<void>;
   onSaveInvestorPayout: (payout: Partial<InvestorPayout>) => Promise<InvestorPayout>;
@@ -46,6 +63,8 @@ export function InvestorPayoutsView({
   salesInvoices,
   purchaseInvoices,
   wagePayments,
+  categories = [],
+  items = [],
   onSaveInvestor,
   onDeleteInvestor,
   onSaveInvestorPayout,
@@ -67,41 +86,206 @@ export function InvestorPayoutsView({
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [deletingPayoutId, setDeletingPayoutId] = useState<string | null>(null);
 
-  // Calculate Net Profit & Investor Share Pool from system data
-  const profitMetrics = useMemo(() => {
-    // 1. Total revenue
-    const totalRevenue = salesInvoices.reduce((sum, inv) => sum + (Number(inv.totalPayable) || 0), 0);
-    
-    // 2. Total expenses (purchases + staff wages)
-    const totalPurchases = purchaseInvoices.reduce(
-      (sum, inv) => sum + (Number(inv.totalAmount || inv.totalPaidAmount) || 0),
-      0
+  // --- Dynamic Calculation Date Range State ---
+  const [calcDateFilterMode, setCalcDateFilterMode] = useState<'THIS_MONTH' | 'THIS_SEASON' | 'THIS_YEAR' | 'ALL' | 'CUSTOM'>('THIS_MONTH');
+  const [calcStartDate, setCalcStartDate] = useState<string>(getFirstDayOfMonthJalali());
+  const [calcEndDate, setCalcEndDate] = useState<string>(getLastDayOfMonthJalali());
+
+  const handleSetCalcDatePreset = (mode: 'THIS_MONTH' | 'THIS_SEASON' | 'THIS_YEAR' | 'ALL' | 'CUSTOM') => {
+    setCalcDateFilterMode(mode);
+    const today = getCurrentJalaliDate();
+    const parts = today.split('/');
+    const y = parts[0];
+    const m = parseInt(parts[1], 10);
+
+    if (mode === 'THIS_MONTH') {
+      setCalcStartDate(getFirstDayOfMonthJalali());
+      setCalcEndDate(getLastDayOfMonthJalali());
+    } else if (mode === 'THIS_SEASON') {
+      if (m <= 3) {
+        setCalcStartDate(`${y}/01/01`);
+        setCalcEndDate(`${y}/03/31`);
+      } else if (m <= 6) {
+        setCalcStartDate(`${y}/04/01`);
+        setCalcEndDate(`${y}/06/31`);
+      } else if (m <= 9) {
+        setCalcStartDate(`${y}/07/01`);
+        setCalcEndDate(`${y}/09/30`);
+      } else {
+        setCalcStartDate(`${y}/10/01`);
+        setCalcEndDate(`${y}/12/29`);
+      }
+    } else if (mode === 'THIS_YEAR') {
+      setCalcStartDate(`${y}/01/01`);
+      setCalcEndDate(`${y}/12/29`);
+    } else if (mode === 'ALL') {
+      setCalcStartDate('1400/01/01');
+      setCalcEndDate('1410/12/29');
+    }
+  };
+
+  // --- Investor Share Percentage & Category Exemption State ---
+  const investorBudgetRow = (settings.budgetRows || []).find(
+    (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
+  );
+  const approvedPercent = investorBudgetRow
+    ? Number(investorBudgetRow.percentage)
+    : (settings.investorSharePercent || 35);
+
+  const [investorSharePercent, setInvestorSharePercent] = useState<number>(approvedPercent);
+  const [exemptCategoryIds, setExemptCategoryIds] = useState<string[]>(
+    settings.investorExemptCategoryIds || ['cat-3']
+  );
+
+  // Effective sales categories
+  const effectiveSalesCategories = useMemo(() => {
+    const list = [...(categories || [])];
+    if (list.length === 0) {
+      list.push(
+        { id: 'cat-1', name: 'اقامت و صبحانه' },
+        { id: 'cat-2', name: 'رستوران و نوشیدنی' },
+        { id: 'cat-3', name: 'دست‌آفرید و صنایع دستی' },
+        { id: 'cat-4', name: 'تجارب و گردشگری' }
+      );
+    }
+    return list;
+  }, [categories]);
+
+  const toggleExemptCategory = (catId: string) => {
+    setExemptCategoryIds((prev) =>
+      prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
     );
-    const totalWages = wagePayments.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
-    const totalExpenses = totalPurchases + totalWages;
+  };
 
-    // 3. Net base profit
-    const netBaseProfit = Math.max(0, totalRevenue - totalExpenses);
+  const includeAllCategories = () => {
+    setExemptCategoryIds([]);
+  };
 
-    // 4. Approved budget row percentage for investor share
-    const investorBudgetRow = (settings.budgetRows || []).find(
-      (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
-    );
-    const approvedPercent = investorBudgetRow
-      ? Number(investorBudgetRow.percentage)
-      : (settings.investorSharePercent || 35);
+  const exemptHandicrafts = () => {
+    const handicraftIds = effectiveSalesCategories
+      .filter((c) =>
+        c.name.includes('صنایع') ||
+        c.name.includes('دست‌آفرید') ||
+        c.name.includes('دست افرید') ||
+        c.name.includes('سوغات') ||
+        c.id === 'cat-3'
+      )
+      .map((c) => c.id);
+    setExemptCategoryIds((prev) => Array.from(new Set([...prev, ...handicraftIds])));
+  };
 
-    // 5. Total pool to distribute among investors
-    const totalInvestorPool = Math.round((netBaseProfit * approvedPercent) / 100);
+  // In-range data
+  const inRangeSales = useMemo(() => {
+    return salesInvoices.filter((inv) => isDateInRange(inv.date, calcStartDate, calcEndDate));
+  }, [salesInvoices, calcStartDate, calcEndDate]);
+
+  const inRangePurchases = useMemo(() => {
+    return purchaseInvoices.filter((inv) => isDateInRange(inv.date, calcStartDate, calcEndDate));
+  }, [purchaseInvoices, calcStartDate, calcEndDate]);
+
+  const inRangeWages = useMemo(() => {
+    return wagePayments.filter((w) => isDateInRange(w.date, calcStartDate, calcEndDate));
+  }, [wagePayments, calcStartDate, calcEndDate]);
+
+  // Calculate revenue per category in range (strictly paid amounts per Requirement ج)
+  const { salesByCategory, totalGrossRevenue, exemptRevenue, eligibleRevenue } = useMemo(() => {
+    const catSales: Record<string, number> = {};
+    effectiveSalesCategories.forEach((cat) => {
+      catSales[cat.id] = 0;
+    });
+    catSales['other'] = 0;
+
+    let gross = 0;
+    let exempt = 0;
+    let eligible = 0;
+
+    inRangeSales.forEach((inv) => {
+      const totalPayable = Number(inv.totalPayable) || 0;
+      const paidAmount = Number(inv.totalPaidAmount) > 0 ? Number(inv.totalPaidAmount) : (inv.paid ? totalPayable : 0);
+      if (paidAmount <= 0) return;
+
+      gross += paidAmount;
+      const ratio = totalPayable > 0 ? Math.min(1, paidAmount / totalPayable) : 1;
+
+      (inv.items || []).forEach((item) => {
+        const rawItemAmount = Number(item.payableAmount ?? item.totalPrice) || 0;
+        const itemAmount = rawItemAmount * ratio;
+        const matchedCat = resolveSalesCategory(item, effectiveSalesCategories, items);
+        const catId = matchedCat ? matchedCat.id : 'other';
+        catSales[catId] = (catSales[catId] || 0) + itemAmount;
+
+        const isExempt = matchedCat ? exemptCategoryIds.includes(matchedCat.id) : false;
+        if (isExempt) {
+          exempt += itemAmount;
+        } else {
+          eligible += itemAmount;
+        }
+      });
+    });
 
     return {
-      totalRevenue,
-      totalExpenses,
-      netBaseProfit,
-      approvedPercent,
-      totalInvestorPool
+      salesByCategory: catSales,
+      totalGrossRevenue: gross,
+      exemptRevenue: exempt,
+      eligibleRevenue: eligible
     };
-  }, [salesInvoices, purchaseInvoices, wagePayments, settings]);
+  }, [inRangeSales, effectiveSalesCategories, items, exemptCategoryIds]);
+
+  // Expenses in range
+  const totalInScopePurchases = useMemo(() => {
+    return inRangePurchases.reduce((sum, inv) => {
+      return sum + (Number(inv.totalPaid || inv.totalPaidAmount || inv.totalAmount) || 0);
+    }, 0);
+  }, [inRangePurchases]);
+
+  const totalInScopeWages = useMemo(() => {
+    return inRangeWages.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  }, [inRangeWages]);
+
+  const totalOperatingExpenses = totalInScopePurchases + totalInScopeWages;
+
+  // Net Profit & Total Investor Share Pool in Selected Range
+  const netEligibleProfit = Math.max(0, eligibleRevenue - totalOperatingExpenses);
+  const totalInvestorProfitPool = Math.round((netEligibleProfit * investorSharePercent) / 100);
+
+  // In-range investor payouts
+  const inRangeInvestorPayouts = useMemo(() => {
+    return investorPayouts.filter((p) => isDateInRange(p.date, calcStartDate, calcEndDate) && p.paid !== false);
+  }, [investorPayouts, calcStartDate, calcEndDate]);
+
+  // Per-Investor Detailed Breakdown (تقسیم سود و تعیین مبالغ قابل پرداخت)
+  const investorBreakdowns = useMemo(() => {
+    return investors.map((inv) => {
+      const sharePct = Number(inv.sharePercent) || 0;
+      // Calculated share of total investor profit pool
+      const calculatedShare = Math.round((totalInvestorProfitPool * sharePct) / 100);
+      // Actual payouts already recorded in this period for this investor
+      const alreadyPaidInPeriod = inRangeInvestorPayouts
+        .filter((p) => p.investorId === inv.id)
+        .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      // Exact payable amount (مانده قابل پرداخت)
+      const remainingPayable = Math.max(0, calculatedShare - alreadyPaidInPeriod);
+      const isSettled = calculatedShare > 0 && remainingPayable === 0;
+
+      return {
+        investor: inv,
+        sharePct,
+        calculatedShare,
+        alreadyPaidInPeriod,
+        remainingPayable,
+        isSettled
+      };
+    });
+  }, [investors, totalInvestorProfitPool, inRangeInvestorPayouts]);
+
+  // Global profitMetrics for fallback reference
+  const profitMetrics = {
+    totalRevenue: totalGrossRevenue,
+    totalExpenses: totalOperatingExpenses,
+    netBaseProfit: netEligibleProfit,
+    approvedPercent: investorSharePercent,
+    totalInvestorPool: totalInvestorProfitPool
+  };
 
   // Overall Statistics
   const totalPayoutsSum = investorPayouts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -198,6 +382,24 @@ export function InvestorPayoutsView({
 
   const handleOpenEditPayout = (payout: InvestorPayout) => {
     setEditingPayout({ ...payout });
+    setIsPayoutModalOpen(true);
+  };
+
+  const handleQuickPayout = (inv: Investor, payableAmount: number, calculatedShare: number) => {
+    const periodLabel = `سود دوره ${calcStartDate} تا ${calcEndDate}`;
+    const amountToPay = payableAmount > 0 ? payableAmount : calculatedShare;
+    setEditingPayout({
+      investorId: inv.id,
+      investorName: inv.name,
+      amount: amountToPay,
+      date: getCurrentJalaliDate(),
+      paymentMethod: 'BANK_TRANSFER',
+      referenceNumber: '',
+      period: periodLabel,
+      notes: `تسویه سود سهم ${inv.sharePercent}٪ دوره ${calcStartDate} تا ${calcEndDate} (سود کل سرمایه‌گذاران: ${formatPersianPrice(totalInvestorProfitPool)} تومان)`,
+      paid: true,
+      calculatedProfitShare: calculatedShare
+    });
     setIsPayoutModalOpen(true);
   };
 
@@ -361,6 +563,399 @@ export function InvestorPayoutsView({
             <TrendingUp className="w-5 h-5" />
           </div>
         </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* TOP SECTION: INVESTOR PROFIT CALCULATION & PAYABLE AMOUNTS */}
+      {/* ======================================================== */}
+      <div className="bg-white rounded-3xl p-6 border-2 border-amber-900/20 shadow-md flex flex-col gap-6">
+        
+        {/* Section Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-amber-900/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-800 text-white flex items-center justify-center shadow-xs shrink-0">
+              <Calculator className="w-6 h-6 text-amber-300" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <span>محاسبه سهم سود سرمایه‌گذاران و تعیین مبالغ قابل پرداخت</span>
+                <span className="text-[11px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                  هوشمند بر اساس دسته‌بندی‌ها
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                تفکیک اقلام درآمدی مشمول/معاف (مانند دست‌آفرید)، کسر هزینه‌های دوره و محاسبه دقیق تقسیم سود و مانده قابل تسویه هر شریک
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 bg-amber-50/90 p-2.5 rounded-2xl border border-amber-200 shrink-0">
+            <label className="text-xs font-bold text-amber-950">درصد سهم سرمایه‌گذاران از سود:</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={investorSharePercent}
+              onChange={(e) => setInvestorSharePercent(Math.max(0, Math.min(100, Number(e.target.value))))}
+              className="w-16 p-1.5 border border-amber-300 rounded-xl text-center text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-amber-700 outline-hidden"
+            />
+            <span className="text-xs font-bold text-amber-900">درصد (٪)</span>
+          </div>
+        </div>
+
+        {/* Date Filter & Presets Toolbar */}
+        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200/80 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 font-bold text-slate-700 text-xs shrink-0">
+              <Calendar className="w-4 h-4 text-amber-800" />
+              <span>بازه محاسباتی:</span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-slate-500 font-bold shrink-0">از:</span>
+              <div className="w-56 sm:w-64 min-w-[220px]">
+                <PersianDatePicker
+                  value={calcStartDate}
+                  onChange={(newD) => {
+                    setCalcStartDate(newD);
+                    setCalcDateFilterMode('CUSTOM');
+                  }}
+                  placeholder="شروع (۱۴۰۳/۰۱/۰۱)"
+                  inputClassName="py-2 px-3 text-xs"
+                  allowClear
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-slate-500 font-bold shrink-0">تا:</span>
+              <div className="w-56 sm:w-64 min-w-[220px]">
+                <PersianDatePicker
+                  value={calcEndDate}
+                  onChange={(newD) => {
+                    setCalcEndDate(newD);
+                    setCalcDateFilterMode('CUSTOM');
+                  }}
+                  placeholder="پایان (۱۴۰۳/۱۲/۲۹)"
+                  inputClassName="py-2 px-3 text-xs"
+                  allowClear
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Date Presets */}
+          <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleSetCalcDatePreset('THIS_MONTH')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                calcDateFilterMode === 'THIS_MONTH'
+                  ? 'bg-amber-800 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              ماه جاری
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetCalcDatePreset('THIS_SEASON')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                calcDateFilterMode === 'THIS_SEASON'
+                  ? 'bg-amber-800 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              فصل جاری
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetCalcDatePreset('THIS_YEAR')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                calcDateFilterMode === 'THIS_YEAR'
+                  ? 'bg-amber-800 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              سال جاری
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetCalcDatePreset('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                calcDateFilterMode === 'ALL'
+                  ? 'bg-amber-800 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              همه زمان‌ها
+            </button>
+          </div>
+        </div>
+
+        {/* Category Toggles Panel */}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-slate-800">
+                تعیین دسته‌بندی‌های درآمدی مشمول یا معاف از سود سرمایه‌گذار:
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                روی هر دسته‌بندی کلیک کنید تا وضعیت آن تغییر کند. مبالغ بر اساس فاکتورهای وصول‌شده این بازه است.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={includeAllCategories}
+                className="text-xs font-bold px-2.5 py-1 rounded-lg border border-emerald-300 text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100 cursor-pointer transition-all"
+              >
+                مشمول کردن همه
+              </button>
+              <button
+                type="button"
+                onClick={exemptHandicrafts}
+                className="text-xs font-bold px-2.5 py-1 rounded-lg border border-rose-300 text-rose-800 bg-rose-50/70 hover:bg-rose-100 cursor-pointer transition-all"
+              >
+                معاف کردن صنایع‌دستی و سوغات
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {effectiveSalesCategories.map((cat) => {
+              const isExempt = exemptCategoryIds.includes(cat.id);
+              const catRevenue = salesByCategory[cat.id] || 0;
+              const catShareOfTotal = totalGrossRevenue > 0
+                ? Math.round((catRevenue / totalGrossRevenue) * 100)
+                : 0;
+
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => toggleExemptCategory(cat.id)}
+                  className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-2xs ${
+                    isExempt
+                      ? 'bg-rose-50/70 border-rose-300 hover:bg-rose-100/60'
+                      : 'bg-emerald-50/70 border-emerald-300 hover:bg-emerald-100/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-bold text-xs text-slate-900">{cat.name}</span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                        isExempt
+                          ? 'bg-rose-200 text-rose-800'
+                          : 'bg-emerald-200 text-emerald-800'
+                      }`}
+                    >
+                      {isExempt ? (
+                        <>
+                          <Square className="w-3 h-3 text-rose-700" />
+                          معاف از سود
+                        </>
+                      ) : (
+                        <>
+                          <CheckSquare className="w-3 h-3 text-emerald-700" />
+                          مشمول سود
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-baseline justify-between w-full pt-1 border-t border-slate-200/60">
+                    <span className="text-[11px] text-slate-500">فروش نقدی این بازه:</span>
+                    <span className="text-xs font-mono font-bold text-slate-800">
+                      {formatPersianPrice(catRevenue)} تومان
+                      <span className="text-[10px] text-slate-400 font-normal mr-1">({catShareOfTotal}٪)</span>
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Financial Calculation Metrics Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+          <div>
+            <span className="text-[11px] text-slate-500 font-semibold block">کل فروش وصول‌شده در بازه</span>
+            <p className="text-sm font-bold text-slate-900 font-mono mt-1">
+              {formatPersianPrice(totalGrossRevenue)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">درآمد نقدی محقق شده</span>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-rose-700 font-semibold block">درآمد معاف از سود</span>
+            <p className="text-sm font-bold text-rose-700 font-mono mt-1">
+              {formatPersianPrice(exemptRevenue)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">اقلام و دسته‌های معاف</span>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-emerald-700 font-semibold block">درآمد مشمول محاسبه سود</span>
+            <p className="text-sm font-bold text-emerald-700 font-mono mt-1">
+              {formatPersianPrice(eligibleRevenue)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">فروش وصول‌شده مشمول</span>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-slate-600 font-semibold block">هزینه‌های کسر شده دوره</span>
+            <p className="text-sm font-bold text-slate-800 font-mono mt-1">
+              {formatPersianPrice(totalOperatingExpenses)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">خرید + حقوق پرسنل</span>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-slate-700 font-semibold block">سود خالص مشمول اقامتگاه</span>
+            <p className="text-sm font-bold text-slate-900 font-mono mt-1">
+              {formatPersianPrice(netEligibleProfit)} تومان
+            </p>
+            <span className="text-[10px] text-slate-400 block mt-0.5">درآمد مشمول منهای هزینه‌ها</span>
+          </div>
+
+          <div className="bg-amber-100/90 p-3 rounded-xl border border-amber-300 flex flex-col justify-between">
+            <span className="text-[11px] text-amber-900 font-black block">
+              کل سهم سود سرمایه‌گذاران ({investorSharePercent}٪)
+            </span>
+            <p className="text-base font-black text-amber-950 font-mono mt-0.5">
+              {formatPersianPrice(totalInvestorProfitPool)} تومان
+            </p>
+            <span className="text-[10px] text-amber-800 block mt-0.5 font-medium">
+              مجموع قابل تقسیم بین شرکا
+            </span>
+          </div>
+        </div>
+
+        {/* Division of Profit & Payable Amounts per Investor */}
+        <div className="flex flex-col gap-3 pt-2 border-t border-amber-900/10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-amber-800" />
+              <h4 className="text-sm font-black text-slate-900">
+                تقسیم سود و مبالغ قابل پرداخت به تفکیک سرمایه‌گذاران
+              </h4>
+            </div>
+            <span className="text-xs text-slate-500 font-medium">
+              محاسبه سهم هر سرمایه‌گذار و کسر پرداختی‌های قبلی در این دوره
+            </span>
+          </div>
+
+          {investors.length === 0 ? (
+            <div className="p-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+              <p className="text-xs text-slate-600 font-bold">هنوز سرمایه‌گذاری در سیستم تعریف نشده است.</p>
+              <button
+                type="button"
+                onClick={handleOpenNewInvestor}
+                className="mt-2 text-xs text-amber-800 font-bold underline cursor-pointer"
+              >
+                افزودن اولین سرمایه‌گذار
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                    <th className="py-3 px-4">سرمایه‌گذار</th>
+                    <th className="py-3 px-4 text-center">درصد سهم</th>
+                    <th className="py-3 px-4">سود سهم سرمایه‌گذار (محاسبه شده)</th>
+                    <th className="py-3 px-4">پرداختی‌های ثبت شده در بازه</th>
+                    <th className="py-3 px-4">میزان مبلغ قابل پرداخت (مانده)</th>
+                    <th className="py-3 px-4 text-center">وضعیت</th>
+                    <th className="py-3 px-4 text-center">اقدام</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {investorBreakdowns.map((b) => (
+                    <tr key={b.investor.id} className="hover:bg-amber-50/30 transition-colors">
+                      <td className="py-3 px-4 font-bold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-amber-800 text-white font-black text-xs flex items-center justify-center">
+                            {b.investor.name.slice(0, 1)}
+                          </div>
+                          <div>
+                            <div>{b.investor.name}</div>
+                            {b.investor.phone && (
+                              <div className="text-[10px] text-slate-400 font-mono dir-ltr">{b.investor.phone}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-slate-700">
+                        {b.sharePct}٪
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                        {formatPersianPrice(b.calculatedShare)} تومان
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-600">
+                        {formatPersianPrice(b.alreadyPaidInPeriod)} تومان
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`font-mono font-black text-sm ${
+                          b.remainingPayable > 0 ? 'text-amber-950 font-bold' : 'text-slate-400'
+                        }`}>
+                          {formatPersianPrice(b.remainingPayable)} تومان
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {b.isSettled ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
+                            <CheckCheck className="w-3 h-3 text-emerald-700" />
+                            تسویه شده
+                          </span>
+                        ) : b.remainingPayable > 0 ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300">
+                            قابل پرداخت
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">بدون مانده</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickPayout(b.investor, b.remainingPayable, b.calculatedShare)}
+                          className="inline-flex items-center gap-1 bg-amber-800 hover:bg-amber-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-300" />
+                          <span>ثبت سند پرداخت</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50 font-bold text-slate-800 border-t-2 border-slate-300">
+                    <td className="py-3 px-4">مجموع سهم‌ها ({investors.reduce((s, i) => s + (Number(i.sharePercent) || 0), 0)}٪)</td>
+                    <td className="py-3 px-4 text-center font-mono">
+                      {investors.reduce((s, i) => s + (Number(i.sharePercent) || 0), 0)}٪
+                    </td>
+                    <td className="py-3 px-4 font-mono font-bold text-amber-950">
+                      {formatPersianPrice(investorBreakdowns.reduce((s, b) => s + b.calculatedShare, 0))} تومان
+                    </td>
+                    <td className="py-3 px-4 font-mono text-slate-700">
+                      {formatPersianPrice(investorBreakdowns.reduce((s, b) => s + b.alreadyPaidInPeriod, 0))} تومان
+                    </td>
+                    <td className="py-3 px-4 font-mono font-black text-emerald-800 text-sm">
+                      {formatPersianPrice(investorBreakdowns.reduce((s, b) => s + b.remainingPayable, 0))} تومان
+                    </td>
+                    <td colSpan={2} className="py-3 px-4 text-center text-[11px] text-slate-500">
+                      کل مانده تسویه نشده در این بازه
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* SECTION 1: INVESTORS LIST & SHARES */}

@@ -17,8 +17,10 @@ import {
   Plus,
   FileCheck,
   MessageSquare,
-  Send
+  Send,
+  ExternalLink
 } from 'lucide-react';
+import { getInvoiceUrl } from '../utils/invoiceUrl';
 
 interface SalesInvoicesListViewProps {
   invoices: SalesInvoice[];
@@ -292,6 +294,17 @@ export const SalesInvoicesListView: React.FC<SalesInvoicesListViewProps> = ({
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
+
+                          {/* Open in New Tab */}
+                          <a
+                            href={getInvoiceUrl(inv.id, 'sales')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-slate-600 hover:text-amber-800 hover:bg-amber-100 rounded-lg transition-all"
+                            title="مشاهده در تب جدید"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
 
                           {/* Print & PDF */}
                           <button

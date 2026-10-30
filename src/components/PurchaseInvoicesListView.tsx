@@ -3,7 +3,8 @@ import { PurchaseInvoice } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { isDateInRange, formatPersianDate } from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
-import { ShoppingBag, Search, Calendar, Edit3, Trash2, CheckCircle2, Clock, Filter, Plus } from 'lucide-react';
+import { ShoppingBag, Search, Calendar, Edit3, Trash2, CheckCircle2, Clock, Filter, Plus, ExternalLink } from 'lucide-react';
+import { getInvoiceUrl } from '../utils/invoiceUrl';
 
 interface PurchaseInvoicesListViewProps {
   invoices: PurchaseInvoice[];
@@ -205,6 +206,16 @@ export const PurchaseInvoicesListView: React.FC<PurchaseInvoicesListViewProps> =
 
                     <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-center gap-1">
+                        <a
+                          href={getInvoiceUrl(inv.id, 'purchase')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-100 rounded-lg transition-colors"
+                          title="مشاهده فاکتور خرید در تب جدید"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+
                         <button
                           onClick={() => onSelectEdit(inv)}
                           className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-100 rounded-lg cursor-pointer"

@@ -14,7 +14,8 @@ import {
   Award,
   Layers,
   ChevronDown,
-  Info
+  Info,
+  ArrowRightLeft
 } from 'lucide-react';
 import {
   SalesInvoice,
@@ -227,6 +228,7 @@ interface BudgetAndInvestorViewProps {
   investorPayouts?: InvestorPayout[];
   investors?: Investor[];
   settings: LodgeSettings;
+  onNavigateToPayouts?: () => void;
 }
 
 export function BudgetAndInvestorView({
@@ -239,7 +241,8 @@ export function BudgetAndInvestorView({
   items = [],
   investorPayouts = [],
   investors = [],
-  settings
+  settings,
+  onNavigateToPayouts
 }: BudgetAndInvestorViewProps) {
   // Date Range State
   const [dateFilterMode, setDateFilterMode] = useState<'THIS_MONTH' | 'THIS_YEAR' | 'CUSTOM'>('THIS_MONTH');
@@ -262,21 +265,6 @@ export function BudgetAndInvestorView({
 
   const [includeWagesInExpenses, setIncludeWagesInExpenses] = useState<boolean>(true);
 
-  // Investor Share Settings
-  const investorBudgetRow = (settings.budgetRows || []).find(
-    (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
-  );
-  const defaultInvestorPercent = investorBudgetRow
-    ? Number(investorBudgetRow.percentage)
-    : (settings.investorSharePercent || 35);
-
-  const [investorSharePercent, setInvestorSharePercent] = useState<number>(
-    defaultInvestorPercent
-  );
-  const [investorExemptCategoryIds, setInvestorExemptCategoryIds] = useState<string[]>(
-    settings.investorExemptCategoryIds || ['cat-3']
-  );
-
   // Set quick date preset
   const handleSetDatePreset = (mode: 'THIS_MONTH' | 'THIS_YEAR' | 'CUSTOM') => {
     setDateFilterMode(mode);
@@ -296,13 +284,10 @@ export function BudgetAndInvestorView({
   const inRangePurchases = purchaseInvoices.filter((inv) => isDateInRange(inv.date, startDate, endDate));
   const inRangeWages = wagePayments.filter((w) => isDateInRange(w.date, startDate, endDate));
 
-  // Calculate Total Sales Revenue by Category and Investor Eligible Revenue
+  // Calculate Total Sales Revenue by Category
   const salesByCategory: Record<string, number> = {};
   categories.forEach((cat) => (salesByCategory[cat.id] = 0));
   salesByCategory['other'] = 0;
-
-  let investorEligibleRevenue = 0;
-  let investorExemptRevenue = 0;
 
   inRangeSales.forEach((inv) => {
     const totalPayable = Number(inv.totalPayable) || 0;
@@ -318,14 +303,6 @@ export function BudgetAndInvestorView({
       const matchedCat = resolveSalesCategory(item, categories, items);
       const catId = matchedCat ? matchedCat.id : 'other';
       salesByCategory[catId] = (salesByCategory[catId] || 0) + itemAmount;
-
-      // Check exemption dynamically based on matched category id
-      const isExempt = matchedCat ? investorExemptCategoryIds.includes(matchedCat.id) : false;
-      if (isExempt) {
-        investorExemptRevenue += itemAmount;
-      } else {
-        investorEligibleRevenue += itemAmount;
-      }
     });
   });
 
@@ -468,11 +445,6 @@ export function BudgetAndInvestorView({
     };
   });
 
-  // Calculate Investor Profit Amount (for Section 2 reference)
-  const investorEligibleExpenses = totalInScopeExpenses;
-  const investorNetBaseProfit = Math.max(0, investorEligibleRevenue - investorEligibleExpenses);
-  const investorShareAmount = (investorNetBaseProfit * investorSharePercent) / 100;
-
   // 3. Investor Profit row (Allocated ceiling based on selected budget income; actual cost based on recorded payouts)
   const investorConfig = configRows.find(
     (r) => r.isInvestorShare || r.name.includes('سرمایه‌گذار')
@@ -548,12 +520,6 @@ export function BudgetAndInvestorView({
     setSelectedBudgetCategoryIds([]);
   };
 
-  const toggleInvestorExemptCategory = (catId: string) => {
-    setInvestorExemptCategoryIds((prev) =>
-      prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
-    );
-  };
-
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-6">
       
@@ -562,10 +528,10 @@ export function BudgetAndInvestorView({
         <div>
           <h2 className="text-xl font-black text-amber-950 flex items-center gap-2">
             <Calculator className="w-6 h-6 text-amber-800" />
-            تحلیل ردیف‌های بودجه و محاسبه سهم سرمایه‌گذار
+            تحلیل ردیف‌های بودجه مصوب اقامتگاه
           </h2>
           <p className="text-xs text-amber-900/70 mt-1">
-            سنجش انحراف از بودجه مصوب و محاسبه دقیق سود سرمایه‌گذار با تفکیک اقلام معاف مانند دست‌آفرید
+            سنجش انحراف از بودجه مصوب، نظارت بر سقف‌های تخصیص‌یافته و مقایسه با هزینه‌های واقعی انجام شده
           </p>
         </div>
 
@@ -941,152 +907,31 @@ export function BudgetAndInvestorView({
         </div>
       </div>
 
-      {/* Section 2: Investor Profit Calculation (سود سرمایه‌گذار) */}
-      <div className="bg-white rounded-3xl p-6 border-2 border-amber-900/20 shadow-md flex flex-col gap-5">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-amber-900/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-800 text-white flex items-center justify-center shadow-xs">
-              <Award className="w-6 h-6 text-amber-300" />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">
-                محاسبه سود سرمایه‌گذار اقامتگاه
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                تفکیک اقلام درآمدی مشمول سود و معاف کردن مواردی مانند دست‌آفرید و صنایع دستی
-              </p>
-            </div>
+      {/* Notice Card for Investor Profit Calculation & Payouts */}
+      <div className="bg-gradient-to-r from-amber-900/10 via-amber-800/5 to-transparent border border-amber-800/20 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-amber-800 text-amber-200 flex items-center justify-center shadow-xs shrink-0">
+            <Award className="w-6 h-6" />
           </div>
-
-          <div className="flex items-center gap-3 bg-amber-50/80 p-2.5 rounded-2xl border border-amber-200">
-            <label className="text-xs font-bold text-amber-950">درصد سهم سرمایه‌گذار:</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={investorSharePercent}
-              onChange={(e) => setInvestorSharePercent(Number(e.target.value))}
-              className="w-16 p-1.5 border border-amber-300 rounded-xl text-center text-xs font-mono font-bold bg-white focus:ring-2 focus:ring-amber-700 outline-hidden"
-            />
-            <span className="text-xs font-bold text-amber-900">درصد (٪)</span>
+          <div>
+            <h4 className="text-sm font-black text-slate-900">
+              محاسبه سهم سود سرمایه‌گذاران و تعیین مبالغ قابل پرداخت
+            </h4>
+            <p className="text-xs text-slate-600 mt-1">
+              تفکیک اقلام درآمدی مشمول/معاف از سود، محاسبه سهم هر سرمایه‌گذار، تقسیم سود و صدور اسناد تسویه به بخش «محاسبه و پرداخت سود سرمایه‌گذار» منتقل شده است.
+            </p>
           </div>
         </div>
-
-        {/* Exempt Category Toggle & Revenue Breakdown */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800">
-              تعیین دسته‌بندی‌های درآمدی مشمول یا معاف از محاسبه سود سرمایه‌گذار:
-            </span>
-            <span className="text-[11px] text-slate-500">
-              روی هر دسته کلیک کنید تا آن را معاف یا مشمول سود کنید
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {categories.map((cat) => {
-              const isExempt = investorExemptCategoryIds.includes(cat.id);
-              const catRevenue = salesByCategory[cat.id] || 0;
-              const catShareOfTotal = totalInScopeSalesRevenue > 0
-                ? Math.round((catRevenue / totalInScopeSalesRevenue) * 100)
-                : 0;
-
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => toggleInvestorExemptCategory(cat.id)}
-                  className={`p-3 rounded-2xl border text-right transition-all cursor-pointer flex flex-col justify-between gap-2 shadow-2xs ${
-                    isExempt
-                      ? 'bg-rose-50/70 border-rose-300 hover:bg-rose-100/60'
-                      : 'bg-emerald-50/70 border-emerald-300 hover:bg-emerald-100/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="font-bold text-xs text-slate-900">{cat.name}</span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                        isExempt
-                          ? 'bg-rose-200 text-rose-800'
-                          : 'bg-emerald-200 text-emerald-800'
-                      }`}
-                    >
-                      {isExempt ? (
-                        <>
-                          <Square className="w-3 h-3 text-rose-700" />
-                          معاف از سود
-                        </>
-                      ) : (
-                        <>
-                          <CheckSquare className="w-3 h-3 text-emerald-700" />
-                          مشمول سود
-                        </>
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between w-full pt-1 border-t border-slate-200/60">
-                    <span className="text-[11px] text-slate-500">فروش این بازه:</span>
-                    <span className="text-xs font-mono font-bold text-slate-800">
-                      {formatPersianPrice(catRevenue)} تومان
-                      <span className="text-[10px] text-slate-400 font-normal mr-1">({catShareOfTotal}٪)</span>
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Calculation Summary Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <div>
-            <span className="text-[11px] text-slate-500 font-semibold">کل فروش ناخالص در بازه</span>
-            <p className="text-base font-bold text-slate-900 font-mono mt-1">
-              {formatPersianPrice(totalInScopeSalesRevenue)} تومان
-            </p>
-            {investorExemptRevenue > 0 && (
-              <span className="text-[10px] text-rose-600 block mt-0.5 font-medium">
-                معاف شده: {formatPersianPrice(investorExemptRevenue)} تومان
-              </span>
-            )}
-          </div>
-
-          <div>
-            <span className="text-[11px] text-slate-500 font-semibold">درآمد خالص مشمول سرمایه‌گذار</span>
-            <p className="text-base font-bold text-emerald-700 font-mono mt-1">
-              {formatPersianPrice(investorEligibleRevenue)} تومان
-            </p>
-            <span className="text-[10px] text-slate-400 block mt-0.5">
-              مبنای محاسبه سود
-            </span>
-          </div>
-
-          <div>
-            <span className="text-[11px] text-slate-500 font-semibold">هزینه‌های کسر شده (خرید و دستمزد)</span>
-            <p className="text-base font-bold text-rose-700 font-mono mt-1">
-              {formatPersianPrice(investorEligibleExpenses)} تومان
-            </p>
-            <span className="text-[10px] text-slate-400 block mt-0.5">
-              هزینه‌های جاری اقامتگاه
-            </span>
-          </div>
-
-          <div className="bg-amber-100/80 p-3.5 rounded-xl border border-amber-300 flex flex-col justify-between">
-            <span className="text-[11px] text-amber-900 font-bold">
-              سهم سود محاسبه شده سرمایه‌گذار ({investorSharePercent}٪)
-            </span>
-            <p className="text-lg font-black text-amber-950 font-mono mt-1">
-              {formatPersianPrice(investorShareAmount)} تومان
-            </p>
-            {totalInvestorPayoutsPaid > 0 && (
-              <span className="text-[10px] text-amber-800 font-medium block mt-1 pt-1 border-t border-amber-300">
-                پرداخت شده: {formatPersianPrice(totalInvestorPayoutsPaid)} | مانده: {formatPersianPrice(investorShareAmount - totalInvestorPayoutsPaid)} تومان
-              </span>
-            )}
-          </div>
-        </div>
-
+        {onNavigateToPayouts && (
+          <button
+            type="button"
+            onClick={onNavigateToPayouts}
+            className="inline-flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+          >
+            <span>ورود به بخش محاسبه و پرداخت سود سرمایه‌گذار</span>
+            <ArrowRightLeft className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
     </div>
