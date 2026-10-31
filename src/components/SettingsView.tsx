@@ -21,16 +21,25 @@ import {
   FolderArchive,
   Award,
   Lock,
-  FolderTree
+  FolderTree,
+  Database,
+  UploadCloud
 } from 'lucide-react';
+import { downloadDatabaseBackup } from '../services/backupService';
 
 interface SettingsViewProps {
   settings: LodgeSettings;
   purchaseCategories?: Category[];
   onSaveSettings: (settings: LodgeSettings) => Promise<void>;
+  onOpenBackupRestore?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ settings, purchaseCategories, onSaveSettings }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  settings,
+  purchaseCategories,
+  onSaveSettings,
+  onOpenBackupRestore
+}) => {
   const initialBudgetRows = (() => {
     const existing = settings.budgetRows || [];
     const pCats = (purchaseCategories && purchaseCategories.length > 0)
@@ -722,6 +731,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, purchaseCa
                 </button>
               </span>
             ))}
+          </div>
+        </div>
+
+        {/* Database Backup & Restore (JSON) */}
+        <div className="bg-gradient-to-br from-amber-950 via-amber-900 to-amber-950 text-white rounded-3xl p-6 shadow-md border border-amber-800/60 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-amber-800/50">
+            <h3 className="text-sm font-black text-amber-100 flex items-center gap-2">
+              <Database className="w-5 h-5 text-amber-300" />
+              پشتیبان‌گیری و بازیابی پایگاه داده اقامتگاه (فایل JSON)
+            </h3>
+            <span className="text-[10px] bg-amber-800 text-amber-200 font-bold px-2.5 py-0.5 rounded-full border border-amber-700">
+              امنیت کامل اطلاعات
+            </span>
+          </div>
+
+          <p className="text-xs text-amber-100/80 leading-relaxed">
+            از تمامی اطلاعات پایگاه داده شامل فاکتورهای فروش و خرید، پرونده مهمانان و کیف پول، کاتالوگ اقلام و خدمات، چک‌های صیادی، دستمزد پرسنل، حساب‌های سرمایه‌گذاران و تنظیمات کلی نسخه پشتیبان آفلاین روی کامپیوتر خود دانلود کنید، یا در صورت نیاز فایل پشتیبان قبلی را بازیابی نمایید.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const fname = await downloadDatabaseBackup();
+                  alert(`نسخه پشتیبان با نام «${fname}» با موفقیت دانلود شد.`);
+                } catch (e: any) {
+                  alert('خطا در دانلود پشتیبان: ' + (e?.message || 'لطفاً دوباره امتحان کنید.'));
+                }
+              }}
+              className="inline-flex items-center gap-2 bg-amber-200 hover:bg-amber-300 text-amber-950 font-black px-6 py-2.5 rounded-2xl text-xs shadow-md transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-amber-900" />
+              دانلود نسخه پشتیبان کامل دیتابیس (JSON)
+            </button>
+
+            {onOpenBackupRestore && (
+              <button
+                type="button"
+                onClick={onOpenBackupRestore}
+                className="inline-flex items-center gap-2 bg-amber-900/90 hover:bg-amber-800 text-white font-bold px-5 py-2.5 rounded-2xl text-xs border border-amber-700/80 transition-all cursor-pointer"
+              >
+                <UploadCloud className="w-4 h-4 text-amber-300" />
+                بازیابی نسخه پشتیبان (آپلود فایل JSON)
+              </button>
+            )}
           </div>
         </div>
 

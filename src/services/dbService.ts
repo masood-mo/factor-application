@@ -230,7 +230,7 @@ function sanitizeForFirestore<T>(data: T): T {
   }));
 }
 
-async function safeFirestoreOp<T>(op: () => Promise<T>, timeoutMs = 6000): Promise<T | null> {
+async function safeFirestoreOp<T>(op: () => Promise<T>, timeoutMs = 15000): Promise<T | null> {
   try {
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
     return await Promise.race([op(), timeoutPromise]);

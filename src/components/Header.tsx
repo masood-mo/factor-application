@@ -22,7 +22,8 @@ import {
   ArrowRight,
   TrendingUp,
   FolderOpen,
-  Award
+  Award,
+  Database
 } from 'lucide-react';
 import { getChequeAlarmStatus, formatPersianDate, getCurrentJalaliDate } from '../utils/persianDate';
 
@@ -31,13 +32,15 @@ interface HeaderProps {
   setActiveTab: (tab: ActiveTab) => void;
   settings: LodgeSettings;
   cheques?: Cheque[];
+  onOpenBackupRestore?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   settings,
-  cheques = []
+  cheques = [],
+  onOpenBackupRestore
 }) => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
@@ -195,8 +198,15 @@ export const Header: React.FC<HeaderProps> = ({
         {
           id: 'settings' as ActiveTab,
           label: 'تنظیمات اقامتگاه',
-          desc: 'مشخصات، چاپ، درصدها و پشتیبان‌گیری',
+          desc: 'مشخصات، چاپ، درصدها و سربرگ',
           icon: Settings
+        },
+        {
+          id: 'backup_restore' as any,
+          label: 'پشتیبان‌گیری و بازیابی پایگاه داده',
+          desc: 'دانلود فایل JSON یا بازیابی نسخه پشتیبان',
+          icon: Database,
+          highlight: true
         }
       ]
     }
@@ -207,8 +217,14 @@ export const Header: React.FC<HeaderProps> = ({
     return category.subItems.some((sub) => sub.id === activeTab);
   };
 
-  const handleSelectTab = (tab: ActiveTab) => {
-    setActiveTab(tab);
+  const handleSelectTab = (tab: ActiveTab | string) => {
+    if (tab === 'backup_restore') {
+      if (onOpenBackupRestore) onOpenBackupRestore();
+      setOpenDropdown(null);
+      setMobileMenuOpen(false);
+      return;
+    }
+    setActiveTab(tab as ActiveTab);
     setOpenDropdown(null);
     setMobileMenuOpen(false);
   };
@@ -362,6 +378,19 @@ export const Header: React.FC<HeaderProps> = ({
                 <Calendar className="w-3.5 h-3.5 text-amber-800" />
                 <span>{formatPersianDate(getCurrentJalaliDate())}</span>
               </div>
+
+              {/* Database Backup & Restore */}
+              {onOpenBackupRestore && (
+                <button
+                  type="button"
+                  onClick={onOpenBackupRestore}
+                  className="flex items-center gap-1.5 bg-gradient-to-l from-amber-900 to-amber-950 hover:from-amber-800 hover:to-amber-900 text-amber-100 border border-amber-800 px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  title="پشتیبان‌گیری و بازیابی پایگاه داده (JSON)"
+                >
+                  <Database className="w-3.5 h-3.5 text-amber-300" />
+                  <span className="hidden sm:inline">پشتیبان‌گیری</span>
+                </button>
+              )}
 
               {/* Source ZIP Download */}
               <a

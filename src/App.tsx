@@ -76,6 +76,7 @@ import { BudgetAndInvestorView } from './components/BudgetAndInvestorView';
 import { ReportsView } from './components/ReportsView';
 import { InvoicePrintModal } from './components/InvoicePrintModal';
 import { PurchaseInvoicePrintModal } from './components/PurchaseInvoicePrintModal';
+import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -104,51 +105,58 @@ export default function App() {
   const [editingPurchaseInvoice, setEditingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
   const [printingSalesInvoice, setPrintingSalesInvoice] = useState<SalesInvoice | null>(null);
   const [printingPurchaseInvoice, setPrintingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
+  const [isBackupRestoreOpen, setIsBackupRestoreOpen] = useState<boolean>(false);
+
+  // Universal Data Loader / Refresher
+  const refreshAllData = async () => {
+    try {
+      const [st, cats, pcats, its, pits, sales, purchases, gst, wtxs, chq, wgs, invs, payouts, vnds] = await Promise.all([
+        fetchSettings(),
+        fetchCategories(),
+        fetchPurchaseCategories(),
+        fetchItems(),
+        fetchPurchaseItems(),
+        fetchSalesInvoices(),
+        fetchPurchaseInvoices(),
+        fetchGuests(),
+        fetchWalletTransactions(),
+        fetchCheques(),
+        fetchWagePayments(),
+        fetchInvestors(),
+        fetchInvestorPayouts(),
+        fetchVendors(),
+      ]);
+
+      setSettings(st);
+      setCategories(cats);
+      setPurchaseCategories(pcats);
+      setItems(its);
+      setPurchaseItems(pits);
+      setSalesInvoices(sales);
+      setPurchaseInvoices(purchases);
+      setGuests(gst);
+      setWalletTransactions(wtxs);
+      setCheques(chq);
+      setWagePayments(wgs);
+      setInvestors(invs);
+      setInvestorPayouts(payouts);
+      setVendors(vnds);
+    } catch (err) {
+      console.error('Error refreshing app data:', err);
+    }
+  };
 
   // Fetch Initial Data
   useEffect(() => {
-    async function loadData() {
+    async function loadInitial() {
       setLoading(true);
       try {
-        const [st, cats, pcats, its, pits, sales, purchases, gst, wtxs, chq, wgs, invs, payouts, vnds] = await Promise.all([
-          fetchSettings(),
-          fetchCategories(),
-          fetchPurchaseCategories(),
-          fetchItems(),
-          fetchPurchaseItems(),
-          fetchSalesInvoices(),
-          fetchPurchaseInvoices(),
-          fetchGuests(),
-          fetchWalletTransactions(),
-          fetchCheques(),
-          fetchWagePayments(),
-          fetchInvestors(),
-          fetchInvestorPayouts(),
-          fetchVendors(),
-        ]);
-
-        setSettings(st);
-        setCategories(cats);
-        setPurchaseCategories(pcats);
-        setItems(its);
-        setPurchaseItems(pits);
-        setSalesInvoices(sales);
-        setPurchaseInvoices(purchases);
-        setGuests(gst);
-        setWalletTransactions(wtxs);
-        setCheques(chq);
-        setWagePayments(wgs);
-        setInvestors(invs);
-        setInvestorPayouts(payouts);
-        setVendors(vnds);
-      } catch (err) {
-        console.error('Error loading initial data:', err);
+        await refreshAllData();
       } finally {
         setLoading(false);
       }
     }
-
-    loadData();
+    loadInitial();
   }, []);
 
   // Update dynamic favicon if logo is configured (Requirement 1)
@@ -539,6 +547,7 @@ export default function App() {
         }}
         settings={settings}
         cheques={cheques}
+        onOpenBackupRestore={() => setIsBackupRestoreOpen(true)}
       />
 
       {/* Main App Content Views */}
@@ -760,6 +769,7 @@ export default function App() {
             customerTitle={settings.customerTitle || 'مهمان'}
             onViewSalesInvoice={(inv) => setPrintingSalesInvoice(inv)}
             onViewPurchaseInvoice={(inv) => setPrintingPurchaseInvoice(inv)}
+            onOpenBackupRestore={() => setIsBackupRestoreOpen(true)}
           />
         )}
 
@@ -769,6 +779,7 @@ export default function App() {
             settings={settings}
             purchaseCategories={purchaseCategories}
             onSaveSettings={handleSaveSettings}
+            onOpenBackupRestore={() => setIsBackupRestoreOpen(true)}
           />
         )}
       </main>
@@ -791,6 +802,13 @@ export default function App() {
           onClose={() => setPrintingPurchaseInvoice(null)}
         />
       )}
+
+      {/* Full Database Backup & Restore Modal (JSON) */}
+      <BackupRestoreModal
+        isOpen={isBackupRestoreOpen}
+        onClose={() => setIsBackupRestoreOpen(false)}
+        onDataRestored={refreshAllData}
+      />
     </div>
   );
 }

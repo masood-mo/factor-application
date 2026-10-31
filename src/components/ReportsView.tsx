@@ -49,9 +49,13 @@ import {
   RotateCcw,
   ExternalLink,
   Eye,
-  X
+  X,
+  Database,
+  Download,
+  UploadCloud
 } from 'lucide-react';
 import { getInvoiceUrl, openInvoiceInNewTab } from '../utils/invoiceUrl';
+import { downloadDatabaseBackup } from '../services/backupService';
 
 interface ReportsViewProps {
   salesInvoices: SalesInvoice[];
@@ -64,6 +68,7 @@ interface ReportsViewProps {
   customerTitle?: string;
   onViewSalesInvoice?: (invoice: SalesInvoice) => void;
   onViewPurchaseInvoice?: (invoice: PurchaseInvoice) => void;
+  onOpenBackupRestore?: () => void;
 }
 
 type ReportTabId =
@@ -87,6 +92,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   customerTitle = 'مهمان',
   onViewSalesInvoice,
   onViewPurchaseInvoice,
+  onOpenBackupRestore,
 }) => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -941,15 +947,49 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 space-y-6">
 
-      {/* Title & Description */}
-      <div>
-        <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-          <BarChart3 className="w-6 h-6 text-amber-800" />
-          گزارش‌ها و تحلیل‌های مالی و آماری اقامتگاه
-        </h2>
-        <p className="text-xs text-slate-500 mt-1">
-          محاسبه سود و زیان بر اساس تفکیک دسته‌های درآمد و هزینه، گزارش‌های تحلیلی خرید و فروش بر اساس کالا و دسته، و خروجی کامل فایل اکسل
-        </p>
+      {/* Title & Description with Backup Actions */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <BarChart3 className="w-6 h-6 text-amber-800" />
+            گزارش‌ها و تحلیل‌های مالی و آماری اقامتگاه
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            محاسبه سود و زیان بر اساس تفکیک دسته‌های درآمد و هزینه، گزارش‌های تحلیلی خرید و فروش بر اساس کالا و دسته، و خروجی کامل فایل اکسل
+          </p>
+        </div>
+
+        {/* Database Backup & Restore Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const fname = await downloadDatabaseBackup();
+                alert(`نسخه پشتیبان با نام «${fname}» با موفقیت دانلود شد.`);
+              } catch (e: any) {
+                alert('خطا در دانلود پشتیبان: ' + (e?.message || 'خطای ناشناخته'));
+              }
+            }}
+            className="flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 text-white px-3.5 py-2 rounded-2xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="دانلود نسخه کامل پایگاه داده روی کامپیوتر"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-300" />
+            <span>پشتیبان‌گیری از دیتابیس (JSON)</span>
+          </button>
+
+          {onOpenBackupRestore && (
+            <button
+              type="button"
+              onClick={onOpenBackupRestore}
+              className="flex items-center gap-1.5 bg-white hover:bg-amber-50 text-amber-900 border border-amber-900/20 px-3.5 py-2 rounded-2xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+              title="بازیابی فایل پشتیبان قبلی"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-amber-800" />
+              <span>بازیابی پشتیبان</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Date Filter Toolbar */}
