@@ -49,9 +49,42 @@ export function resolvePurchaseCategory(
   const normItemName = normalizePersianText(item.itemName || '');
   const normCatName = normalizePersianText(item.categoryName || '');
 
-  // 1. High-priority keyword heuristics on item name
-  // This guarantees that "قبض برق" or "قبض آب" is ALWAYS categorized under "قبض و اینترنت"
-  // even if an invoice row had an incorrect default category id!
+  // 1. Direct categoryId match (User's explicit selection is always primary)
+  if (item.categoryId) {
+    const rawId = item.categoryId;
+    const strippedId = rawId.replace(/^b-pcat-/, '');
+    const found = categories.find((c) => c.id === rawId || c.id === strippedId || `b-pcat-${c.id}` === rawId);
+    if (found) return found;
+  }
+
+  // 2. Direct categoryName match
+  if (normCatName) {
+    const found = categories.find((c) => {
+      const cn = normalizePersianText(c.name);
+      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
+    });
+    if (found) return found;
+  }
+
+  // 3. Catalog Item match (from catalog database)
+  if (item.itemId) {
+    const pItem = purchaseCatalogItems.find((p) => p.id === item.itemId);
+    if (pItem?.categoryId) {
+      const stripped = pItem.categoryId.replace(/^b-pcat-/, '');
+      const found = categories.find((c) => c.id === pItem.categoryId || c.id === stripped);
+      if (found) return found;
+    }
+    if (pItem?.categoryName) {
+      const pcn = normalizePersianText(pItem.categoryName);
+      const found = categories.find((c) => {
+        const cn = normalizePersianText(c.name);
+        return cn === pcn || cn.includes(pcn) || pcn.includes(cn);
+      });
+      if (found) return found;
+    }
+  }
+
+  // 4. Keyword heuristics fallback only when no explicit category was selected
   for (const cat of categories) {
     const cName = normalizePersianText(cat.name);
     // Utility bills & internet
@@ -75,52 +108,20 @@ export function resolvePurchaseCategory(
     ) {
       return cat;
     }
-    // Equipment & Operating Supplies
+    // Equipment & Operating Supplies (do NOT match if category is hygiene/food)
     if (
-      (cName.includes('تجهیزات') || cName.includes('ملزومات') || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
-      /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(normItemName)
+      (cName.includes('تجهیزات') || (cName.includes('ملزومات') && !cName.includes('بهداشتی')) || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
+      /تجهیز|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(normItemName)
     ) {
       return cat;
     }
     // Food & Groceries & Hygiene
     if (
       (cName.includes('غذایی') || cName.includes('بهداشتی') || cat.id === 'pcat-1' || cat.id === 'b-pcat-1') &&
-      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات/.test(normItemName)
+      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات|تخم مرغ|تخم‌مرغ/.test(normItemName)
     ) {
       return cat;
     }
-  }
-
-  // 2. Direct categoryId match (handling b-pcat- prefix and standard ids)
-  if (item.categoryId) {
-    const rawId = item.categoryId;
-    const strippedId = rawId.replace(/^b-pcat-/, '');
-    const found = categories.find((c) => c.id === rawId || c.id === strippedId || `b-pcat-${c.id}` === rawId);
-    if (found) return found;
-  }
-
-  // 3. Catalog Item match
-  if (item.itemId) {
-    const pItem = purchaseCatalogItems.find((p) => p.id === item.itemId);
-    if (pItem?.categoryId) {
-      const stripped = pItem.categoryId.replace(/^b-pcat-/, '');
-      const found = categories.find((c) => c.id === pItem.categoryId || c.id === stripped);
-      if (found) return found;
-    }
-    if (pItem?.categoryName) {
-      const pcn = normalizePersianText(pItem.categoryName);
-      const found = categories.find((c) => normalizePersianText(c.name) === pcn);
-      if (found) return found;
-    }
-  }
-
-  // 4. Direct categoryName match
-  if (normCatName) {
-    const found = categories.find((c) => {
-      const cn = normalizePersianText(c.name);
-      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
-    });
-    if (found) return found;
   }
 
   // 5. Keyword search in category names
@@ -143,7 +144,36 @@ export function resolveSalesCategory(
   const normItemName = normalizePersianText(item.itemName || '');
   const normCatName = normalizePersianText(item.categoryName || '');
 
-  // 1. Keyword matching for known sales domains
+  // 1. Direct categoryId match (User's explicit selection is always primary)
+  if (item.categoryId) {
+    const found = categories.find((c) => c.id === item.categoryId);
+    if (found) return found;
+  }
+
+  // 2. Direct categoryName match
+  if (normCatName) {
+    const found = categories.find((c) => {
+      const cn = normalizePersianText(c.name);
+      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
+    });
+    if (found) return found;
+  }
+
+  // 3. Catalog Item match
+  if (item.itemId) {
+    const sItem = salesCatalogItems.find((s) => s.id === item.itemId);
+    if (sItem?.categoryId) {
+      const found = categories.find((c) => c.id === sItem.categoryId);
+      if (found) return found;
+    }
+    if (sItem?.categoryName) {
+      const scn = normalizePersianText(sItem.categoryName);
+      const found = categories.find((c) => normalizePersianText(c.name) === scn);
+      if (found) return found;
+    }
+  }
+
+  // 4. Keyword matching fallback for known sales domains
   for (const cat of categories) {
     const cName = normalizePersianText(cat.name);
     // Accommodation & Breakfast
@@ -174,35 +204,6 @@ export function resolveSalesCategory(
     ) {
       return cat;
     }
-  }
-
-  // 2. Direct categoryId match
-  if (item.categoryId) {
-    const found = categories.find((c) => c.id === item.categoryId);
-    if (found) return found;
-  }
-
-  // 3. Catalog Item match
-  if (item.itemId) {
-    const sItem = salesCatalogItems.find((s) => s.id === item.itemId);
-    if (sItem?.categoryId) {
-      const found = categories.find((c) => c.id === sItem.categoryId);
-      if (found) return found;
-    }
-    if (sItem?.categoryName) {
-      const scn = normalizePersianText(sItem.categoryName);
-      const found = categories.find((c) => normalizePersianText(c.name) === scn);
-      if (found) return found;
-    }
-  }
-
-  // 4. Direct categoryName match
-  if (normCatName) {
-    const found = categories.find((c) => {
-      const cn = normalizePersianText(c.name);
-      return cn === normCatName || normCatName.includes(cn) || cn.includes(normCatName);
-    });
-    if (found) return found;
   }
 
   // 5. Keyword match from category name words

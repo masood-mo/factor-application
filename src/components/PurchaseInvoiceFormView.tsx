@@ -13,6 +13,14 @@ export function detectPurchaseCategory(
   const norm = normalizePersianText(itemName || '');
   if (!norm) return null;
 
+  // 0. Direct name match: if itemName contains category name or vice-versa
+  for (const cat of categories) {
+    const cName = normalizePersianText(cat.name);
+    if (cName.length > 2 && (norm.includes(cName) || cName.includes(norm))) {
+      return cat;
+    }
+  }
+
   for (const cat of categories) {
     const cName = normalizePersianText(cat.name);
     // Bills & Utilities & Internet
@@ -36,17 +44,17 @@ export function detectPurchaseCategory(
     ) {
       return cat;
     }
-    // Equipment & Operating Supplies
+    // Food & Groceries & Hygiene (Checked BEFORE equipment to prevent 'مواد شوینده' / 'ملزومات بهداشتی' clash)
     if (
-      (cName.includes('تجهیزات') || cName.includes('ملزومات') || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
-      /تجهیز|ملزومات|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(norm)
+      (cName.includes('غذایی') || cName.includes('بهداشتی') || cat.id === 'pcat-1' || cat.id === 'b-pcat-1') &&
+      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات|تخم مرغ|تخم‌مرغ/.test(norm)
     ) {
       return cat;
     }
-    // Food & Groceries & Hygiene
+    // Equipment & Operating Supplies
     if (
-      (cName.includes('غذایی') || cName.includes('بهداشتی') || cat.id === 'pcat-1' || cat.id === 'b-pcat-1') &&
-      /غذا|پذیرایی|صبحانه|دیزی|کباب|برنج|گوشت|مرغ|نان|پنیر|روغن|چای|قند|شوینده|بهداشتی|شامپو|مایع|دستمال|میوه|سبزی|ماست|شیر|لبنیات|سوپرمارکت|خواربار|ادویه|زعفران|حبوبات/.test(norm)
+      (cName.includes('تجهیزات') || (cName.includes('ملزومات') && !cName.includes('بهداشتی')) || cat.id === 'pcat-5' || cat.id === 'b-pcat-5') &&
+      /تجهیز|پتو|تشک|ملحفه|بالش|ظروف|قاشق|لیوان|لامپ|فرش|وسایل|پنکه|بخاری/.test(norm)
     ) {
       return cat;
     }
@@ -229,18 +237,45 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
 
   // When user selects a suggestion from the item autocomplete
   const handleSelectCatalogItem = (index: number, selected: Item) => {
-    const newItems = [...items];
-    let row = { ...newItems[index] };
-    row.itemId = selected.id;
-    row.itemName = selected.name;
-    row.unit = selected.unit || row.unit;
-    row.unitPrice = selected.basePrice || 0;
-    row.categoryId = selected.categoryId;
-    row.categoryName = selected.categoryName;
+    // 1. Resolve matching category in the purchase categories list:
+    let matchedCat = categories.find((c) => c.id === selected.categoryId);
+    if (!matchedCat && selected.categoryName) {
+      const normCat = normalizePersianText(selected.categoryName);
+      matchedCat = categories.find((c) => {
+        const cn = normalizePersianText(c.name);
+        return cn === normCat || cn.includes(normCat) || normCat.includes(cn);
+      });
+    }
+    if (!matchedCat) {
+      matchedCat = detectPurchaseCategory(selected.name, categories);
+    }
 
-    newItems[index] = recalculateRow(row);
-    setItems(newItems);
+    setItems((prevItems) => {
+      const newItems = [...prevItems];
+      let row = { ...newItems[index] };
+      row.itemId = selected.id;
+      row.itemName = selected.name;
+      row.unit = selected.unit || row.unit;
+      row.unitPrice = selected.basePrice || 0;
+      row.categoryId = matchedCat?.id || selected.categoryId || '';
+      row.categoryName = matchedCat?.name || selected.categoryName || '';
+
+      newItems[index] = recalculateRow(row);
+      return newItems;
+    });
     setActiveItemSuggestIndex(null);
+  };
+
+  const handleRowCategoryChange = (index: number, categoryId: string) => {
+    const selCat = categories.find((c) => c.id === categoryId);
+    setItems((prevItems) => {
+      const newItems = [...prevItems];
+      const row = { ...newItems[index] };
+      row.categoryId = categoryId;
+      row.categoryName = selCat?.name || (categories.find((c) => c.id === categoryId)?.name) || '';
+      newItems[index] = recalculateRow(row);
+      return newItems;
+    });
   };
 
   const handleAddRow = () => {
@@ -666,35 +701,52 @@ export const PurchaseInvoiceFormView: React.FC<PurchaseInvoiceFormViewProps> = (
                             )}
                           </div>
 
-                          {row.itemId && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
-                              ✓ کاتالوگ خرید: {row.categoryName || 'خرید'}
-                            </span>
-                          )}
+                          {/* Resolved category for this row */}
+                          {(() => {
+                            // Find category by ID first, then by name, then by detection
+                            const catById = row.categoryId ? categories.find((c) => c.id === row.categoryId) : undefined;
+                            const catByName = !catById && row.categoryName
+                              ? categories.find((c) => {
+                                  const cn = normalizePersianText(c.name);
+                                  const rn = normalizePersianText(row.categoryName || '');
+                                  return cn === rn || cn.includes(rn) || rn.includes(cn);
+                                })
+                              : undefined;
+                            const detected = !catById && !catByName ? detectPurchaseCategory(row.itemName, categories) : undefined;
+                            const activeCat = catById || catByName || detected;
+                            const activeCatId = activeCat?.id || row.categoryId || '';
+                            const activeCatName = activeCat?.name || row.categoryName || 'خرید';
 
-                          {categories.length > 0 && (
-                            <div className="flex items-center gap-1.5 mt-1 bg-slate-50 border border-slate-200 rounded-lg p-1.5">
-                              <span className="text-[10px] font-bold text-slate-600 whitespace-nowrap">
-                                {row.itemId ? 'دسته هزینه:' : 'انتخاب دسته‌بندی کالا یا خدمات:'}
-                              </span>
-                              <select
-                                value={row.categoryId || ''}
-                                onChange={(e) => {
-                                  const selCat = categories.find((c) => c.id === e.target.value);
-                                  handleItemChange(idx, 'categoryId', e.target.value);
-                                  handleItemChange(idx, 'categoryName', selCat?.name || '');
-                                }}
-                                className="w-full text-[11px] font-bold text-emerald-900 bg-white border border-slate-300 rounded px-1.5 py-1 outline-hidden"
-                              >
-                                <option value="">(انتخاب دسته‌بندی هزینه)</option>
-                                {categories.map((c) => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
+                            return (
+                              <>
+                                {row.itemId && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
+                                    ✓ کاتالوگ خرید: {activeCatName}
+                                  </span>
+                                )}
+
+                                {categories.length > 0 && (
+                                  <div className="flex items-center gap-1.5 mt-1 bg-slate-50 border border-slate-200 rounded-lg p-1.5">
+                                    <span className="text-[10px] font-bold text-slate-600 whitespace-nowrap">
+                                      {row.itemId ? 'دسته هزینه:' : 'انتخاب دسته‌بندی کالا یا خدمات:'}
+                                    </span>
+                                    <select
+                                      value={activeCatId}
+                                      onChange={(e) => handleRowCategoryChange(idx, e.target.value)}
+                                      className="w-full text-[11px] font-bold text-emerald-900 bg-white border border-slate-300 rounded px-1.5 py-1 outline-hidden"
+                                    >
+                                      <option value="">(انتخاب دسته‌بندی هزینه)</option>
+                                      {categories.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
 

@@ -250,18 +250,29 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
 
   // When user selects a suggestion from item autocomplete
   const handleSelectAutocompleteItem = (index: number, selected: Item) => {
-    const newItems = [...items];
-    let row = { ...newItems[index] };
-    row.itemId = selected.id;
-    row.itemName = selected.name;
-    row.unit = selected.unit || row.unit;
-    row.basePrice = selected.basePrice || 0;
-    row.categoryId = selected.categoryId;
-    row.categoryName = selected.categoryName;
-    row.isNewlyAddedToCatalog = false;
+    let matchedCat = categories.find((c) => c.id === selected.categoryId);
+    if (!matchedCat && selected.categoryName) {
+      const normCat = normalizePersianText(selected.categoryName);
+      matchedCat = categories.find((c) => {
+        const cn = normalizePersianText(c.name);
+        return cn === normCat || cn.includes(normCat) || normCat.includes(cn);
+      });
+    }
 
-    newItems[index] = recalculateRow(row);
-    setItems(newItems);
+    setItems((prevItems) => {
+      const newItems = [...prevItems];
+      let row = { ...newItems[index] };
+      row.itemId = selected.id;
+      row.itemName = selected.name;
+      row.unit = selected.unit || row.unit;
+      row.basePrice = selected.basePrice || 0;
+      row.categoryId = matchedCat?.id || selected.categoryId || '';
+      row.categoryName = matchedCat?.name || selected.categoryName || '';
+      row.isNewlyAddedToCatalog = false;
+
+      newItems[index] = recalculateRow(row);
+      return newItems;
+    });
     setActiveItemSuggestIndex(null);
   };
 
@@ -1091,36 +1102,61 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                               )}
                             </div>
 
-                            {row.itemId && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
-                                ✓ کاتالوگ: {row.categoryName || 'فروش'}
-                              </span>
-                            )}
+                            {(() => {
+                              const catById = row.categoryId ? categories.find((c) => c.id === row.categoryId) : undefined;
+                              const catByName = !catById && row.categoryName
+                                ? categories.find((c) => {
+                                    const cn = normalizePersianText(c.name);
+                                    const rn = normalizePersianText(row.categoryName || '');
+                                    return cn === rn || cn.includes(rn) || rn.includes(cn);
+                                  })
+                                : undefined;
+                              const activeCat = catById || catByName;
+                              const activeCatName = activeCat?.name || row.categoryName || 'فروش';
+                              const activeCatId = activeCat?.id || row.categoryId || '';
 
-                            {/* If user typed a new item (not in catalog), display Category Selector immediately */}
-                            {row.itemName.trim() && !row.itemId && categories.length > 0 && (
-                              <div className="mt-1 p-1.5 bg-amber-50/90 border border-amber-200 rounded-lg flex flex-col gap-1">
-                                <span className="text-[10px] font-bold text-amber-900">
-                                  انتخاب دسته‌بندی کالا یا خدمات:
-                                </span>
-                                <select
-                                  value={row.categoryId || ''}
-                                  onChange={(e) => {
-                                    const cat = categories.find((c) => c.id === e.target.value);
-                                    handleItemChange(idx, 'categoryId', e.target.value);
-                                    handleItemChange(idx, 'categoryName', cat ? cat.name : '');
-                                  }}
-                                  className="w-full text-xs font-semibold text-slate-800 bg-white border border-amber-300 rounded-md px-2 py-1 outline-hidden focus:ring-1 focus:ring-amber-600"
-                                >
-                                  <option value="">-- انتخاب دسته‌بندی (کالای جدید فروش) --</option>
-                                  {categories.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
+                              return (
+                                <>
+                                  {row.itemId && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded w-fit">
+                                      ✓ کاتالوگ: {activeCatName}
+                                    </span>
+                                  )}
+
+                                  {/* If user typed a new item (not in catalog), display Category Selector immediately */}
+                                  {row.itemName.trim() && !row.itemId && categories.length > 0 && (
+                                    <div className="mt-1 p-1.5 bg-amber-50/90 border border-amber-200 rounded-lg flex flex-col gap-1">
+                                      <span className="text-[10px] font-bold text-amber-900">
+                                        انتخاب دسته‌بندی کالا یا خدمات:
+                                      </span>
+                                      <select
+                                        value={activeCatId}
+                                        onChange={(e) => {
+                                          const cat = categories.find((c) => c.id === e.target.value);
+                                          setItems((prevItems) => {
+                                            const next = [...prevItems];
+                                            next[idx] = recalculateRow({
+                                              ...next[idx],
+                                              categoryId: e.target.value,
+                                              categoryName: cat ? cat.name : (categories.find(c => c.id === e.target.value)?.name || ''),
+                                            }, settings.taxRate);
+                                            return next;
+                                          });
+                                        }}
+                                        className="w-full text-xs font-semibold text-slate-800 bg-white border border-amber-300 rounded-md px-2 py-1 outline-hidden focus:ring-1 focus:ring-amber-600"
+                                      >
+                                        <option value="">-- انتخاب دسته‌بندی (کالای جدید فروش) --</option>
+                                        {categories.map((c) => (
+                                          <option key={c.id} value={c.id}>
+                                            {c.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </td>
 
