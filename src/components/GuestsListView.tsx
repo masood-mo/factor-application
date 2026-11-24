@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -17,10 +17,17 @@ import {
   X,
   Check,
   CreditCard,
-  ExternalLink
+  ExternalLink,
+  RotateCcw
 } from 'lucide-react';
 import { Guest, SalesInvoice, WalletTransaction } from '../types';
-import { formatPersianPrice, getCurrentJalaliDate, formatPersianDate } from '../utils/persianDate';
+import {
+  formatPersianPrice,
+  getCurrentJalaliDate,
+  formatPersianDate,
+  normalizePersianText,
+  toEnglishDigits
+} from '../utils/persianDate';
 import { getInvoiceUrl, openInvoiceInNewTab } from '../utils/invoiceUrl';
 
 interface GuestsListViewProps {
@@ -47,10 +54,24 @@ export function GuestsListView({
   onViewInvoice
 }: GuestsListViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGuestForProfile, setSelectedGuestForProfile] = useState<Guest | null>(null);
+  const [jobFilter, setJobFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [showJobDropdown, setShowJobDropdown] = useState(false);
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+
+  const [selectedGuestIdForProfile, setSelectedGuestIdForProfile] = useState<string | null>(null);
   const [selectedGuestForWallet, setSelectedGuestForWallet] = useState<Guest | null>(null);
   const [isEditingGuestModalOpen, setIsEditingGuestModalOpen] = useState(false);
   const [editingGuestData, setEditingGuestData] = useState<Partial<Guest>>({});
+
+  // Keep selected profile synced with latest guests data
+  const selectedGuestForProfile = useMemo(
+    () => (selectedGuestIdForProfile ? guests.find((g) => g.id === selectedGuestIdForProfile) || null : null),
+    [guests, selectedGuestIdForProfile]
+  );
+  const setSelectedGuestForProfile = (guest: Guest | null) => {
+    setSelectedGuestIdForProfile(guest ? guest.id : null);
+  };
 
   // Wallet form state
   const [walletAmount, setWalletAmount] = useState<string>('');
@@ -60,16 +81,89 @@ export function GuestsListView({
   const [walletChequeNum, setWalletChequeNum] = useState<string>('');
   const [walletDesc, setWalletDesc] = useState<string>('');
 
-  const filteredGuests = guests.filter((g) => {
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      g.name.toLowerCase().includes(q) ||
-      (g.phone && g.phone.includes(q)) ||
-      (g.job && g.job.toLowerCase().includes(q)) ||
-      (g.city && g.city.toLowerCase().includes(q)) ||
-      (g.description && g.description.toLowerCase().includes(q))
-    );
-  });
+  // Collect unique jobs and cities with guest counts for quick searchable filtering
+  const uniqueJobs = useMemo(() => {
+    const map = new Map<string, { label: string; count: number }>();
+    guests.forEach((g) => {
+      const raw = (g.job || '').trim();
+      if (!raw) return;
+      const key = normalizePersianText(raw);
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { label: raw, count: 1 });
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fa'));
+  }, [guests]);
+
+  const uniqueCities = useMemo(() => {
+    const map = new Map<string, { label: string; count: number }>();
+    guests.forEach((g) => {
+      const raw = (g.city || '').trim();
+      if (!raw) return;
+      const key = normalizePersianText(raw);
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else map.set(key, { label: raw, count: 1 });
+    });
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fa'));
+  }, [guests]);
+
+  const filteredJobOptions = useMemo(() => {
+    const q = normalizePersianText(jobFilter);
+    if (!q) return uniqueJobs;
+    return uniqueJobs.filter((item) => normalizePersianText(item.label).includes(q));
+  }, [uniqueJobs, jobFilter]);
+
+  const filteredCityOptions = useMemo(() => {
+    const q = normalizePersianText(cityFilter);
+    if (!q) return uniqueCities;
+    return uniqueCities.filter((item) => normalizePersianText(item.label).includes(q));
+  }, [uniqueCities, cityFilter]);
+
+  const hasActiveFilters = Boolean(searchQuery.trim() || jobFilter.trim() || cityFilter.trim());
+
+  const filteredGuests = useMemo(() => {
+    const qNorm = normalizePersianText(searchQuery);
+    const qDigits = toEnglishDigits(searchQuery).replace(/\D/g, '');
+    const jobNorm = normalizePersianText(jobFilter);
+    const cityNorm = normalizePersianText(cityFilter);
+
+    return guests.filter((g) => {
+      if (jobNorm && !normalizePersianText(g.job || '').includes(jobNorm)) {
+        return false;
+      }
+      if (cityNorm && !normalizePersianText(g.city || '').includes(cityNorm)) {
+        return false;
+      }
+      if (!qNorm && !qDigits) {
+        return true;
+      }
+      const matchName = qNorm ? normalizePersianText(g.name || '').includes(qNorm) : false;
+      const matchPhone =
+        qDigits.length > 0 && g.phone
+          ? toEnglishDigits(g.phone).replace(/\D/g, '').includes(qDigits)
+          : false;
+      const matchNationalCode =
+        qDigits.length > 0 && g.nationalCode
+          ? toEnglishDigits(g.nationalCode).replace(/\D/g, '').includes(qDigits)
+          : false;
+      const matchJob = qNorm && g.job ? normalizePersianText(g.job).includes(qNorm) : false;
+      const matchCity = qNorm && g.city ? normalizePersianText(g.city).includes(qNorm) : false;
+      const matchDesc = qNorm && g.description ? normalizePersianText(g.description).includes(qNorm) : false;
+      const matchTags =
+        qNorm && Array.isArray(g.tags)
+          ? g.tags.some((t) => normalizePersianText(t).includes(qNorm))
+          : false;
+
+      return matchName || matchPhone || matchNationalCode || matchJob || matchCity || matchDesc || matchTags;
+    });
+  }, [guests, searchQuery, jobFilter, cityFilter]);
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setJobFilter('');
+    setCityFilter('');
+  };
 
   const handleOpenNewGuestModal = () => {
     setEditingGuestData({
@@ -125,8 +219,15 @@ export function GuestsListView({
 
   // Helper to get total invoices & total spent for a guest
   const getGuestStats = (guest: Guest) => {
+    const cleanGuestPhone = toEnglishDigits(guest.phone || '').replace(/\D/g, '');
+    const normGuestName = normalizePersianText(guest.name || '');
     const invs = salesInvoices.filter(
-      (inv) => inv.guestId === guest.id || (guest.phone && inv.guestPhone === guest.phone) || inv.guestName === guest.name
+      (inv) =>
+        inv.guestId === guest.id ||
+        (cleanGuestPhone.length >= 10 &&
+          inv.guestPhone &&
+          toEnglishDigits(inv.guestPhone).replace(/\D/g, '') === cleanGuestPhone) ||
+        (normGuestName && normalizePersianText(inv.guestName || '') === normGuestName)
     );
     const totalSpent = invs.reduce((sum, inv) => sum + (Number(inv.totalPayable) || 0), 0);
     return {
@@ -160,21 +261,186 @@ export function GuestsListView({
         </button>
       </div>
 
-      {/* Search & Filters */}
-      <div className="bg-white rounded-2xl p-4 border border-amber-900/15 shadow-xs flex items-center justify-between gap-4">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            placeholder={`جستجوی نام، شماره تماس، شغل، شهر یا توضیحات ${customerTitle}...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-3 pr-9 py-2 border border-amber-900/20 rounded-xl text-xs focus:ring-2 focus:ring-amber-700/20 focus:border-amber-700 outline-hidden bg-slate-50/50"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+      {/* Search & Dedicated Job / City Filters */}
+      <div className="bg-white rounded-2xl p-4 border border-amber-900/15 shadow-xs space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          {/* General Search */}
+          <div className="relative md:col-span-5">
+            <input
+              type="text"
+              placeholder={`جستجوی نام، شماره تماس، کد ملی یا توضیحات ${customerTitle}...`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-9 py-2 border border-amber-900/20 rounded-xl text-xs focus:ring-2 focus:ring-amber-700/20 focus:border-amber-700 outline-hidden bg-slate-50/50"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="پاک کردن"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Search / Filter by Job */}
+          <div className="relative md:col-span-3">
+            <input
+              type="text"
+              placeholder="جستجو یا انتخاب شغل..."
+              value={jobFilter}
+              onChange={(e) => {
+                setJobFilter(e.target.value);
+                setShowJobDropdown(true);
+              }}
+              onFocus={() => setShowJobDropdown(true)}
+              onBlur={() => setTimeout(() => setShowJobDropdown(false), 180)}
+              className="w-full pl-8 pr-9 py-2 border border-amber-900/20 rounded-xl text-xs focus:ring-2 focus:ring-amber-700/20 focus:border-amber-700 outline-hidden bg-slate-50/50"
+            />
+            <Briefcase className="w-4 h-4 text-amber-700/70 absolute right-3 top-2.5" />
+            {jobFilter && (
+              <button
+                type="button"
+                onClick={() => setJobFilter('')}
+                className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="پاک کردن فیلتر شغل"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {showJobDropdown && filteredJobOptions.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-amber-200 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                <div className="px-3 py-1.5 bg-amber-50/80 border-b border-amber-100 text-[10px] text-amber-900 font-bold">
+                  مشاغل ثبت‌شده ({filteredJobOptions.length})
+                </div>
+                {filteredJobOptions.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onMouseDown={() => {
+                      setJobFilter(opt.label);
+                      setShowJobDropdown(false);
+                    }}
+                    className="w-full text-right px-3 py-2 hover:bg-amber-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50 last:border-0 transition-colors"
+                  >
+                    <span className="font-semibold text-slate-800">{opt.label}</span>
+                    <span className="text-[10px] font-mono bg-amber-100/70 text-amber-900 px-1.5 py-0.5 rounded">
+                      {opt.count} نفر
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Search / Filter by City */}
+          <div className="relative md:col-span-3">
+            <input
+              type="text"
+              placeholder="جستجو یا انتخاب شهر..."
+              value={cityFilter}
+              onChange={(e) => {
+                setCityFilter(e.target.value);
+                setShowCityDropdown(true);
+              }}
+              onFocus={() => setShowCityDropdown(true)}
+              onBlur={() => setTimeout(() => setShowCityDropdown(false), 180)}
+              className="w-full pl-8 pr-9 py-2 border border-amber-900/20 rounded-xl text-xs focus:ring-2 focus:ring-amber-700/20 focus:border-amber-700 outline-hidden bg-slate-50/50"
+            />
+            <MapPin className="w-4 h-4 text-amber-700/70 absolute right-3 top-2.5" />
+            {cityFilter && (
+              <button
+                type="button"
+                onClick={() => setCityFilter('')}
+                className="absolute left-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="پاک کردن فیلتر شهر"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {showCityDropdown && filteredCityOptions.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-white border border-amber-200 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                <div className="px-3 py-1.5 bg-amber-50/80 border-b border-amber-100 text-[10px] text-amber-900 font-bold">
+                  شهرهای ثبت‌شده ({filteredCityOptions.length})
+                </div>
+                {filteredCityOptions.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onMouseDown={() => {
+                      setCityFilter(opt.label);
+                      setShowCityDropdown(false);
+                    }}
+                    className="w-full text-right px-3 py-2 hover:bg-amber-50 cursor-pointer flex items-center justify-between text-xs border-b border-slate-50 last:border-0 transition-colors"
+                  >
+                    <span className="font-semibold text-slate-800">{opt.label}</span>
+                    <span className="text-[10px] font-mono bg-amber-100/70 text-amber-900 px-1.5 py-0.5 rounded">
+                      {opt.count} نفر
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Count & Reset */}
+          <div className="md:col-span-1 flex items-center justify-between md:justify-end gap-2">
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-2 rounded-xl transition-colors cursor-pointer whitespace-nowrap w-full justify-center"
+                title="پاک کردن تمام فیلترها"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span className="md:hidden">پاک کردن فیلترها</span>
+              </button>
+            ) : (
+              <div className="text-xs text-slate-500 font-semibold whitespace-nowrap">
+                <span className="text-amber-900 font-bold">{filteredGuests.length}</span> نفر
+              </div>
+            )}
+          </div>
         </div>
-        <div className="text-xs text-slate-500 font-semibold whitespace-nowrap">
-          تعداد کل: <span className="text-amber-900 font-bold">{filteredGuests.length}</span> نفر
-        </div>
+
+        {/* Active filter summary bar */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-slate-600">
+              <span>
+                نتایج فیلتر: <strong className="text-amber-900">{filteredGuests.length}</strong> از {guests.length} {customerTitle}
+              </span>
+              {jobFilter.trim() && (
+                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-lg text-[11px] font-semibold">
+                  <Briefcase className="w-3 h-3" />
+                  شغل: {jobFilter}
+                  <button type="button" onClick={() => setJobFilter('')} className="hover:text-rose-600 cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {cityFilter.trim() && (
+                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px] font-semibold">
+                  <MapPin className="w-3 h-3" />
+                  شهر: {cityFilter}
+                  <button type="button" onClick={() => setCityFilter('')} className="hover:text-rose-600 cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer"
+            >
+              نمایش همه {customerTitle}‌ها
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Guests Grid */}
@@ -182,7 +448,11 @@ export function GuestsListView({
         <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-amber-900/20 flex flex-col items-center justify-center">
           <Users className="w-12 h-12 text-amber-800/30 mb-3" />
           <p className="text-sm font-bold text-amber-950">هیچ {customerTitle}ی یافت نشد</p>
-          <p className="text-xs text-slate-400 mt-1">با زدن دکمه «افزودن {customerTitle} جدید» شروع کنید</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {hasActiveFilters
+              ? 'فیلتر جستجو، شغل یا شهر را تغییر دهید یا پاک کنید'
+              : `با زدن دکمه «افزودن ${customerTitle} جدید» شروع کنید`}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

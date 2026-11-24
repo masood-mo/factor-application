@@ -25,7 +25,7 @@ import {
   InvestorPayout,
   Vendor
 } from '../types';
-import { getCurrentJalaliDate, normalizePersianText } from '../utils/persianDate';
+import { getCurrentJalaliDate, normalizePersianText, toEnglishDigits } from '../utils/persianDate';
 
 const SETTINGS_DOC = 'general';
 
@@ -1243,7 +1243,8 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
   if (invoiceObj.guestName.trim()) {
     try {
       const guests = getLocalCache<Guest[]>('guests', DEFAULT_GUESTS);
-      const cleanPhone = (invoiceObj.guestPhone || '').replace(/\D/g, '');
+      const cleanPhone = toEnglishDigits(invoiceObj.guestPhone || '').replace(/\D/g, '');
+      const cleanNationalCode = toEnglishDigits(invoiceObj.guestNationalCode || '').replace(/\D/g, '');
       const normName = normalizePersianText(invoiceObj.guestName);
 
       let existingGuest: Guest | undefined;
@@ -1253,7 +1254,12 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
       }
       if (!existingGuest && cleanPhone.length >= 10) {
         existingGuest = guests.find(
-          (g) => g.phone && g.phone.replace(/\D/g, '') === cleanPhone
+          (g) => g.phone && toEnglishDigits(g.phone).replace(/\D/g, '') === cleanPhone
+        );
+      }
+      if (!existingGuest && cleanNationalCode.length >= 8) {
+        existingGuest = guests.find(
+          (g) => g.nationalCode && toEnglishDigits(g.nationalCode).replace(/\D/g, '') === cleanNationalCode
         );
       }
       if (!existingGuest && normName) {
@@ -1264,21 +1270,32 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
 
       if (existingGuest) {
         invoiceObj.guestId = existingGuest.id;
+        const updatedGuest: Guest = { ...existingGuest };
         let updated = false;
-        if (!existingGuest.phone && invoiceObj.guestPhone) {
-          existingGuest.phone = invoiceObj.guestPhone.trim();
+
+        const nextName = invoiceObj.guestName.trim();
+        if (nextName && nextName !== (existingGuest.name || '').trim()) {
+          updatedGuest.name = nextName;
           updated = true;
         }
-        if (!existingGuest.nationalCode && invoiceObj.guestNationalCode) {
-          existingGuest.nationalCode = invoiceObj.guestNationalCode.trim();
+        const nextPhone = (invoiceObj.guestPhone || '').trim();
+        if (nextPhone && nextPhone !== (existingGuest.phone || '').trim()) {
+          updatedGuest.phone = nextPhone;
           updated = true;
         }
-        if (!existingGuest.job && invoiceObj.guestJob) {
-          existingGuest.job = invoiceObj.guestJob.trim();
+        const nextNationalCode = (invoiceObj.guestNationalCode || '').trim();
+        if (nextNationalCode && nextNationalCode !== (existingGuest.nationalCode || '').trim()) {
+          updatedGuest.nationalCode = nextNationalCode;
           updated = true;
         }
+        const nextJob = (invoiceObj.guestJob || '').trim();
+        if (nextJob && nextJob !== (existingGuest.job || '').trim()) {
+          updatedGuest.job = nextJob;
+          updated = true;
+        }
+
         if (updated) {
-          await saveGuest(existingGuest);
+          await saveGuest(updatedGuest);
         }
       } else {
         const newGuestId = invoiceObj.guestId || `guest-${Date.now()}`;
@@ -1309,8 +1326,8 @@ export async function saveSalesInvoice(invoice: Partial<SalesInvoice>): Promise<
   else list.unshift(invoiceObj);
   setLocalCache('sales_invoices', list);
 
-  // 3. Fire-and-forget sync to Firestore (timeout-protected so UI never hangs)
-  safeFirestoreOp(async () => {
+  // 3. Sync to Firestore (timeout-protected so UI never hangs)
+  await safeFirestoreOp(async () => {
     await setDoc(doc(db, 'sales_invoices', id), sanitizeForFirestore(invoiceObj), { merge: true });
   });
 

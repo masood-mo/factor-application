@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { SalesInvoice, LodgeSettings } from '../types';
 import { formatPersianPrice } from '../utils/numberToWords';
 import { formatPersianDate } from '../utils/persianDate';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import {
   Printer,
@@ -59,7 +59,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     window.print();
   };
 
-  // Export to JPG Image
+  // Export to JPG Image using html2canvas-pro
   const handleExportImage = async () => {
     if (!printRef.current || exportingImage || exportingPDF) return;
     setExportingImage(true);
@@ -71,35 +71,49 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       element.style.overflow = 'visible';
 
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#FFFFFF',
         logging: false,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
+        imageTimeout: 8000,
       });
 
       element.style.overflow = originalOverflow;
 
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-      const link = document.createElement('a');
-      const safeGuestName = (invoice.guestName || 'guest').replace(/[/\\?%*:|"<>]/g, '_');
-      link.download = `Invoice-${invoice.serialNumber}-${safeGuestName}.jpg`;
-      link.href = dataUrl;
-      link.click();
+      await new Promise<void>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('خطا در تبدیل سند به داده تصویر'));
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const safeGuestName = (invoice.guestName || 'guest').replace(/[/\\?%*:|"<>]/g, '_');
+          link.download = `Invoice-${invoice.serialNumber}-${safeGuestName}.jpg`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+          resolve();
+        }, 'image/jpeg', 0.95);
+      });
+
       setExportSuccess('تصویر فاکتور (JPG) با موفقیت ذخیره و دانلود شد.');
       setTimeout(() => setExportSuccess(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating image:', err);
-      setExportError('خطا در ایجاد خروجی تصویر فاکتور');
+      setExportError(err?.message ? `خطا در ایجاد خروجی عکس: ${err.message}` : 'خطا در ایجاد خروجی تصویر فاکتور');
       setTimeout(() => setExportError(null), 5000);
     } finally {
       setExportingImage(false);
     }
   };
 
-  // Export to PDF Document using jsPDF
+  // Export to PDF Document using html2canvas-pro + jsPDF
   const handleExportPDF = async () => {
     if (!printRef.current || exportingPDF || exportingImage) return;
     setExportingPDF(true);
@@ -110,20 +124,20 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       const originalOverflow = element.style.overflow;
       element.style.overflow = 'visible';
 
-      // Capture at high resolution (2.5x) for crystal-clear Persian typography and borders
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#FFFFFF',
         logging: false,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
+        imageTimeout: 8000,
       });
 
       element.style.overflow = originalOverflow;
 
-      const imgData = canvas.toDataURL('image/png', 1.0);
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -139,19 +153,19 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
       // Single-page or multi-page handling
       if (contentHeight <= pageHeight - margin * 2) {
-        pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
+        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, contentHeight);
       } else {
         const usablePageHeight = pageHeight - margin * 2;
         let heightLeft = contentHeight;
         let position = margin;
 
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
         heightLeft -= usablePageHeight;
 
         while (heightLeft > 0) {
           position = position - usablePageHeight;
           pdf.addPage();
-          pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
           heightLeft -= usablePageHeight;
         }
       }
@@ -163,9 +177,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       pdf.save(fileName);
       setExportSuccess('سند PDF فاکتور با موفقیت تولید و دانلود شد.');
       setTimeout(() => setExportSuccess(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating PDF with jsPDF:', err);
-      setExportError('خطا در ایجاد خروجی سند PDF فاکتور');
+      setExportError(err?.message ? `خطا در ایجاد خروجی PDF: ${err.message}` : 'خطا در ایجاد خروجی سند PDF فاکتور');
       setTimeout(() => setExportError(null), 5000);
     } finally {
       setExportingPDF(false);
@@ -252,7 +266,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const modalBody = (
     <>
-      <div className={`bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-amber-900/20 overflow-hidden flex flex-col ${
+      <div className={`invoice-modal-container bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-amber-900/20 overflow-hidden flex flex-col print:shadow-none print:border-none print:m-0 print:p-0 print:w-full print:max-w-none print:rounded-none print:max-h-none print:overflow-visible ${
         standaloneMode ? 'my-4' : 'my-auto max-h-[95vh]'
       }`}>
       
@@ -404,16 +418,24 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         )}
 
         {/* Printable & Exportable Canvas Area */}
-        <div ref={printRef} className="p-6 sm:p-8 bg-white overflow-y-auto print-shadow-none flex-1 font-sans text-slate-800">
+        <div
+          ref={printRef}
+          id="sales-invoice-print-content"
+          className="invoice-print-area p-6 sm:p-8 print:p-2 bg-white overflow-y-auto print:overflow-visible print-shadow-none flex-1 font-sans text-slate-800"
+        >
           
           {/* Top Header */}
-          <div className="border-b-2 border-slate-900 pb-5 mb-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="border-b-2 border-slate-900 pb-5 mb-5 print:pb-2.5 print:mb-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:gap-2">
             
             {/* Logo & Lodge Info */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 print:gap-2">
               <img
                 src={settings.lodgeLogo || '/lodge-logo.svg'}
                 alt={settings.lodgeName || 'لوگوی اقامتگاه'}
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/lodge-logo.svg';
+                }}
                 className="w-16 h-16 rounded-2xl object-contain border border-amber-900/20 bg-white p-1 shadow-xs print:block"
               />
 
@@ -468,7 +490,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
 
           {/* Customer / Guest Info */}
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 mb-5 text-xs grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="bg-slate-50 rounded-2xl p-4 print:p-2 mb-5 print:mb-2.5 border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-2 gap-2.5 print:gap-1.5 print-avoid-break">
             <div>
               <span className="text-slate-500 font-bold">مشخصات طرف حساب ({customerTitle}):</span>{' '}
               <span className="font-bold text-slate-900 text-sm">{invoice.guestName}</span>
@@ -504,40 +526,40 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
 
           {/* Line Items Table */}
-          <table className="w-full text-right text-xs border-collapse mb-5">
+          <table className="w-full text-right text-xs border-collapse mb-5 print:mb-2.5">
             <thead>
-              <tr className="bg-slate-900 text-amber-200 font-bold text-[11px]">
-                <th className="p-2.5 border border-slate-900 text-center w-8">#</th>
-                <th className="p-2.5 border border-slate-900">شرح کالا یا خدمت</th>
-                <th className="p-2.5 border border-slate-900 text-center w-16">واحد</th>
-                <th className="p-2.5 border border-slate-900 text-center w-12">تعداد</th>
-                <th className="p-2.5 border border-slate-900 w-24">قیمت پایه</th>
-                <th className="p-2.5 border border-slate-900 w-24">مبلغ کل</th>
+              <tr className="bg-slate-900 text-amber-200 font-bold text-[11px] print:text-[10px]">
+                <th className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-900 text-center w-8">#</th>
+                <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900">شرح کالا یا خدمت</th>
+                <th className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-900 text-center w-16">واحد</th>
+                <th className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-900 text-center w-12">تعداد</th>
+                <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900 w-24">قیمت پایه</th>
+                <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900 w-24">مبلغ کل</th>
                 {invoice.totalDiscountAmount > 0 && (
-                  <th className="p-2.5 border border-slate-900 w-20">تخفیف</th>
+                  <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900 w-20">تخفیف</th>
                 )}
                 {invoice.totalTaxAmount > 0 && (
-                  <th className="p-2.5 border border-slate-900 w-20">مالیات</th>
+                  <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900 w-20">مالیات</th>
                 )}
-                <th className="p-2.5 border border-slate-900 w-28 bg-slate-950 text-amber-300">مبلغ قابل پرداخت</th>
+                <th className="p-2.5 print:py-1.5 print:px-2 border border-slate-900 w-28 bg-slate-950 text-amber-300">مبلغ قابل پرداخت</th>
               </tr>
             </thead>
             <tbody>
               {invoice.items.map((row, i) => (
                 <tr key={row.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/80'}>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold text-slate-400">{i + 1}</td>
-                  <td className="p-2.5 border border-slate-200 font-bold text-slate-900">{row.itemName}</td>
-                  <td className="p-2.5 border border-slate-200 text-center text-slate-600 font-medium">{row.unit}</td>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold font-mono">{row.quantity}</td>
-                  <td className="p-2.5 border border-slate-200 font-mono">{formatPersianPrice(row.basePrice)}</td>
-                  <td className="p-2.5 border border-slate-200 font-mono font-semibold">{formatPersianPrice(row.totalPrice)}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-200 text-center font-bold text-slate-400">{i + 1}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-bold text-slate-900">{row.itemName}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-200 text-center text-slate-600 font-medium">{row.unit}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-1.5 border border-slate-200 text-center font-bold font-mono">{row.quantity}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-mono">{formatPersianPrice(row.basePrice)}</td>
+                  <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-mono font-semibold">{formatPersianPrice(row.totalPrice)}</td>
                   {invoice.totalDiscountAmount > 0 && (
-                    <td className="p-2.5 border border-slate-200 font-mono text-rose-700">{formatPersianPrice(row.discountAmount)}</td>
+                    <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-mono text-rose-700">{formatPersianPrice(row.discountAmount)}</td>
                   )}
                   {invoice.totalTaxAmount > 0 && (
-                    <td className="p-2.5 border border-slate-200 font-mono">{formatPersianPrice(row.taxAmount)}</td>
+                    <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-mono">{formatPersianPrice(row.taxAmount)}</td>
                   )}
-                  <td className="p-2.5 border border-slate-200 font-black font-mono text-amber-950 bg-amber-50/50">
+                  <td className="p-2.5 print:py-1.5 print:px-2 border border-slate-200 font-black font-mono text-amber-950 bg-amber-50/50">
                     {formatPersianPrice(row.payableAmount)}
                   </td>
                 </tr>
@@ -547,14 +569,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
           {/* Multi-Stage Payments Table (If recorded) */}
           {invoice.payments && invoice.payments.length > 0 && (
-            <div className="mb-5 bg-slate-50 rounded-2xl p-3.5 border border-slate-200 text-xs">
-              <h4 className="font-black text-slate-900 mb-2 flex items-center gap-1.5">
+            <div className="mb-5 print:mb-2.5 bg-slate-50 rounded-2xl p-3.5 print:p-2 border border-slate-200 text-xs print-avoid-break">
+              <h4 className="font-black text-slate-900 mb-2 print:mb-1 flex items-center gap-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
                 سوابق مراحل پرداخت و تسویه:
               </h4>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 print:space-y-1">
                 {invoice.payments.map((pmt, pIdx) => (
-                  <div key={pmt.id || pIdx} className="flex justify-between items-center p-2 bg-white rounded-xl border border-slate-100 font-medium">
+                  <div key={pmt.id || pIdx} className="flex justify-between items-center p-2 print:py-1 print:px-2 bg-white rounded-xl border border-slate-100 font-medium">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-slate-700">{formatPersianDate(pmt.date)}</span>
                       <span className="text-slate-500">
@@ -573,9 +595,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           )}
 
           {/* Totals & Bank Box */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:gap-2 mb-5 print:mb-2.5 print-avoid-break">
             {/* Bank Info */}
-            <div className="border border-amber-900/15 rounded-2xl p-3.5 text-xs bg-amber-50/30 space-y-1">
+            <div className="border border-amber-900/15 rounded-2xl p-3.5 print:p-2 text-xs bg-amber-50/30 space-y-1">
               <h4 className="font-black text-amber-950 flex items-center gap-1 mb-1.5">
                 <CreditCard className="w-3.5 h-3.5 text-emerald-700" />
                 اطلاعات حساب بانکی جهت واریز وجه:
@@ -587,7 +609,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
             {/* Total Calculations */}
             {/* Requirement 8: If tax or discount is 0, do not show in bottom summary */}
-            <div className="border border-slate-200 rounded-2xl p-3.5 text-xs space-y-1.5 bg-slate-50">
+            <div className="border border-slate-200 rounded-2xl p-3.5 print:p-2 text-xs space-y-1.5 print:space-y-1 bg-slate-50">
               <div className="flex justify-between text-slate-600 font-medium">
                 <span>جمع اقلام:</span>
                 <span className="font-mono font-bold text-slate-900">{formatPersianPrice(invoice.totalItemsAmount)} تومان</span>
@@ -607,7 +629,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 </div>
               )}
 
-              <div className="flex justify-between text-sm font-black pt-2 border-t border-slate-300 text-slate-900">
+              <div className="flex justify-between text-sm font-black pt-2 print:pt-1 border-t border-slate-300 text-slate-900">
                 <span>مبلغ کل قابل پرداخت:</span>
                 <span className="text-amber-950 text-base font-mono">{formatPersianPrice(invoice.totalPayable)} تومان</span>
               </div>
@@ -628,7 +650,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
 
           {/* Total in Words */}
-          <div className="bg-amber-100/70 text-amber-950 p-3.5 rounded-2xl text-xs font-bold border border-amber-300">
+          <div className="bg-amber-100/70 text-amber-950 p-3.5 print:p-2 rounded-2xl text-xs font-bold border border-amber-300 print-avoid-break">
             مبلغ کل به حروف: {invoice.totalPayableInWords}
           </div>
 
@@ -776,7 +798,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div className="invoice-modal-overlay fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:p-0 print:m-0 print:bg-white print:overflow-visible">
       {modalBody}
     </div>
   );

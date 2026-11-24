@@ -8,7 +8,7 @@ import {
   InvoicePayment,
   Guest
 } from '../types';
-import { getCurrentJalaliDate, generateNextInvoiceSerialNumber, normalizePersianText } from '../utils/persianDate';
+import { getCurrentJalaliDate, generateNextInvoiceSerialNumber, normalizePersianText, toEnglishDigits } from '../utils/persianDate';
 import { PersianDatePicker } from './PersianDatePicker';
 import { numberToWordsPersian, formatPersianPrice } from '../utils/numberToWords';
 import { VoiceInvoiceModal } from './VoiceInvoiceModal';
@@ -145,7 +145,20 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
       setSerialNumber(invoiceToEdit.serialNumber);
       setDate(invoiceToEdit.date);
       setStatus(invoiceToEdit.status || invoiceToEdit.invoiceKind || 'FINAL');
-      setGuestId(invoiceToEdit.guestId);
+
+      let resolvedGuestId = invoiceToEdit.guestId;
+      if (!resolvedGuestId) {
+        const cleanPhone = toEnglishDigits(invoiceToEdit.guestPhone || '').replace(/\D/g, '');
+        const normName = normalizePersianText(invoiceToEdit.guestName || '');
+        const matched = existingGuests.find(
+          (g) =>
+            (cleanPhone.length >= 10 && g.phone && toEnglishDigits(g.phone).replace(/\D/g, '') === cleanPhone) ||
+            (normName && normalizePersianText(g.name) === normName)
+        );
+        if (matched) resolvedGuestId = matched.id;
+      }
+
+      setGuestId(resolvedGuestId);
       setGuestName(invoiceToEdit.guestName);
       setGuestPhone(invoiceToEdit.guestPhone || '');
       setGuestNationalCode(invoiceToEdit.guestNationalCode || '');
@@ -280,19 +293,34 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
   const handleSelectAutocompleteGuest = (guest: Guest) => {
     setGuestId(guest.id);
     setGuestName(guest.name);
-    if (guest.phone) setGuestPhone(guest.phone);
-    if (guest.nationalCode) setGuestNationalCode(guest.nationalCode);
-    if (guest.job) setGuestJob(guest.job);
+    setGuestPhone(guest.phone || '');
+    setGuestNationalCode(guest.nationalCode || '');
+    setGuestJob(guest.job || '');
     setShowGuestSuggestions(false);
   };
 
-  // Filtered guest suggestions based on typed guestName
+  // Filtered guest suggestions based on typed guestName (matches name, phone, job, city)
   const filteredGuestSuggestions = guestName.trim()
-    ? existingGuests.filter((g) =>
-        g.name.toLowerCase().includes(guestName.trim().toLowerCase()) ||
-        (g.phone && g.phone.includes(guestName.trim()))
-      )
+    ? existingGuests.filter((g) => {
+        const qNorm = normalizePersianText(guestName);
+        const qDigits = toEnglishDigits(guestName).replace(/\D/g, '');
+        return (
+          normalizePersianText(g.name).includes(qNorm) ||
+          (qDigits.length >= 3 && g.phone && toEnglishDigits(g.phone).replace(/\D/g, '').includes(qDigits)) ||
+          (g.job && normalizePersianText(g.job).includes(qNorm)) ||
+          (g.city && normalizePersianText(g.city).includes(qNorm))
+        );
+      })
     : [];
+
+  const linkedGuest = guestId ? existingGuests.find((g) => g.id === guestId) : undefined;
+  const hasLinkedGuestProfileChanges = Boolean(
+    linkedGuest &&
+      (guestName.trim() !== (linkedGuest.name || '').trim() ||
+        guestPhone.trim() !== (linkedGuest.phone || '').trim() ||
+        guestNationalCode.trim() !== (linkedGuest.nationalCode || '').trim() ||
+        guestJob.trim() !== (linkedGuest.job || '').trim())
+  );
 
   // Distinct job suggestions from guests and defaults
   const allKnownJobs = Array.from(
@@ -826,9 +854,23 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                   نام و نام‌خانوادگی {customerTitle} <span className="text-rose-600">*</span>:
                 </span>
                 {guestId ? (
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-normal flex items-center gap-0.5">
-                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                    مهمان ثبت‌شده
+                  <span className={`text-[10px] border px-1.5 py-0.5 rounded font-normal flex items-center gap-1 ${
+                    hasLinkedGuestProfileChanges
+                      ? 'bg-sky-50 text-sky-700 border-sky-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}>
+                    <CheckCircle2 className={`w-2.5 h-2.5 ${hasLinkedGuestProfileChanges ? 'text-sky-600' : 'text-emerald-600'}`} />
+                    <span>{hasLinkedGuestProfileChanges ? 'بروزرسانی پروفایل مهمان' : 'مهمان ثبت‌شده'}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGuestId(undefined);
+                      }}
+                      className="hover:text-rose-600 transition-colors cursor-pointer mr-0.5"
+                      title="لغو اتصال به این مهمان و ثبت به عنوان مهمان جدید"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
                   </span>
                 ) : guestName.trim() ? (
                   <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-normal flex items-center gap-0.5" title="این مهمان پس از ثبت فاکتور به فهرست مهمانان اقامتگاه اضافه می‌شود">
@@ -843,16 +885,19 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                 onChange={(e) => {
                   const val = e.target.value;
                   setGuestName(val);
-                  // Check if matches an existing guest by normalized name
-                  const match = existingGuests.find(
-                    (g) => normalizePersianText(g.name) === normalizePersianText(val)
-                  );
-                  if (match) {
-                    setGuestId(match.id);
-                    if (!guestPhone && match.phone) setGuestPhone(match.phone);
-                    if (!guestNationalCode && match.nationalCode) setGuestNationalCode(match.nationalCode);
-                    if (!guestJob && match.job) setGuestJob(match.job);
-                  } else {
+                  // If not already linked to a guest, auto-link on exact normalized name match
+                  // If already linked (guestId is set), keep guestId so editing the name updates the existing guest profile instead of creating a duplicate
+                  if (!guestId) {
+                    const match = existingGuests.find(
+                      (g) => normalizePersianText(g.name) === normalizePersianText(val)
+                    );
+                    if (match) {
+                      setGuestId(match.id);
+                      if (!guestPhone && match.phone) setGuestPhone(match.phone);
+                      if (!guestNationalCode && match.nationalCode) setGuestNationalCode(match.nationalCode);
+                      if (!guestJob && match.job) setGuestJob(match.job);
+                    }
+                  } else if (!val.trim() && !guestPhone.trim() && !guestNationalCode.trim() && !guestJob.trim()) {
                     setGuestId(undefined);
                   }
                   setShowGuestSuggestions(true);
@@ -884,7 +929,11 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                         <Users className="w-3.5 h-3.5 text-amber-700" />
                         <div>
                           <p className="text-xs font-bold text-slate-800">{g.name}</p>
-                          {g.job && <p className="text-[10px] text-slate-500">{g.job}</p>}
+                          {(g.job || g.city) && (
+                            <p className="text-[10px] text-slate-500">
+                              {[g.job, g.city].filter(Boolean).join(' • ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       {g.phone && (
@@ -911,8 +960,10 @@ export const SalesInvoiceFormView: React.FC<SalesInvoiceFormViewProps> = ({
                   const val = e.target.value;
                   setGuestPhone(val);
                   if (!guestId && val.trim().length >= 10) {
-                    const clean = val.replace(/\D/g, '');
-                    const match = existingGuests.find((g) => g.phone && g.phone.replace(/\D/g, '') === clean);
+                    const clean = toEnglishDigits(val).replace(/\D/g, '');
+                    const match = existingGuests.find(
+                      (g) => g.phone && toEnglishDigits(g.phone).replace(/\D/g, '') === clean
+                    );
                     if (match) {
                       setGuestId(match.id);
                       if (!guestName) setGuestName(match.name);

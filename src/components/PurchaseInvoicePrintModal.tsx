@@ -3,7 +3,7 @@ import { PurchaseInvoice, LodgeSettings } from '../types';
 import { formatPersianPrice, numberToWordsPersian } from '../utils/numberToWords';
 import { formatPersianDate } from '../utils/persianDate';
 import { getInvoiceUrl } from '../utils/invoiceUrl';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import {
   Printer,
@@ -47,7 +47,7 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
     window.print();
   };
 
-  // Export to JPG Image
+  // Export to JPG Image using html2canvas-pro
   const handleExportImage = async () => {
     if (!printRef.current || exportingImage || exportingPDF) return;
     setExportingImage(true);
@@ -59,35 +59,49 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
       element.style.overflow = 'visible';
 
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#FFFFFF',
         logging: false,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
+        imageTimeout: 8000,
       });
 
       element.style.overflow = originalOverflow;
 
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-      const link = document.createElement('a');
-      const safeVendorName = (invoice.vendorName || 'vendor').replace(/[/\\?%*:|"<>]/g, '_');
-      link.download = `PurchaseInvoice-${invoice.serialNumber}-${safeVendorName}.jpg`;
-      link.href = dataUrl;
-      link.click();
-      setExportSuccess('تصویر فاکتور خرید (JPG) با موفقیت ذخیره شد.');
+      await new Promise<void>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('خطا در تبدیل سند فاکتور خرید به داده تصویر'));
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const safeVendorName = (invoice.vendorName || 'vendor').replace(/[/\\?%*:|"<>]/g, '_');
+          link.download = `PurchaseInvoice-${invoice.serialNumber}-${safeVendorName}.jpg`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+          resolve();
+        }, 'image/jpeg', 0.95);
+      });
+
+      setExportSuccess('تصویر فاکتور خرید (JPG) با موفقیت ذخیره و دانلود شد.');
       setTimeout(() => setExportSuccess(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating image:', err);
-      setExportError('خطا در ایجاد تصویر فاکتور خرید');
+      setExportError(err?.message ? `خطا در ایجاد تصویر: ${err.message}` : 'خطا در ایجاد خروجی تصویر فاکتور خرید');
       setTimeout(() => setExportError(null), 5000);
     } finally {
       setExportingImage(false);
     }
   };
 
-  // Export to PDF Document using jsPDF
+  // Export to PDF Document using html2canvas-pro + jsPDF
   const handleExportPDF = async () => {
     if (!printRef.current || exportingPDF || exportingImage) return;
     setExportingPDF(true);
@@ -99,18 +113,19 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
       element.style.overflow = 'visible';
 
       const canvas = await html2canvas(element, {
-        scale: 2.5,
+        scale: 2,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         backgroundColor: '#FFFFFF',
         logging: false,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
+        imageTimeout: 8000,
       });
 
       element.style.overflow = originalOverflow;
 
-      const imgData = canvas.toDataURL('image/png', 1.0);
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -125,19 +140,19 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
       const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
       if (contentHeight <= pageHeight - margin * 2) {
-        pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
+        pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, contentHeight);
       } else {
         const usablePageHeight = pageHeight - margin * 2;
         let heightLeft = contentHeight;
         let position = margin;
 
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
         heightLeft -= usablePageHeight;
 
         while (heightLeft > 0) {
           position = position - usablePageHeight;
           pdf.addPage();
-          pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+          pdf.addImage(imgData, 'JPEG', margin, position, contentWidth, contentHeight);
           heightLeft -= usablePageHeight;
         }
       }
@@ -148,9 +163,9 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
       pdf.save(fileName);
       setExportSuccess('سند PDF فاکتور خرید با موفقیت دانلود شد.');
       setTimeout(() => setExportSuccess(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating PDF:', err);
-      setExportError('خطا در ایجاد سند PDF فاکتور');
+      setExportError(err?.message ? `خطا در ایجاد خروجی PDF: ${err.message}` : 'خطا در ایجاد سند PDF فاکتور خرید');
       setTimeout(() => setExportError(null), 5000);
     } finally {
       setExportingPDF(false);
@@ -162,7 +177,7 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
   const remaining = Math.max(0, totalPayable - (invoice.totalPaid || 0));
 
   const content = (
-    <div className={`bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-emerald-900/20 overflow-hidden flex flex-col ${
+    <div className={`invoice-modal-container bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-emerald-900/20 overflow-hidden flex flex-col print:shadow-none print:border-none print:m-0 print:p-0 print:w-full print:max-w-none print:rounded-none print:max-h-none print:overflow-visible ${
       standaloneMode ? 'my-4' : 'my-auto max-h-[95vh]'
     }`}>
       {/* Top Control Bar (Hidden on print) */}
@@ -273,19 +288,23 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
       )}
 
       {/* Printable Invoice Document Body */}
-      <div className="overflow-y-auto p-4 sm:p-8 flex-1 bg-slate-50/50">
+      <div className="overflow-y-auto p-4 sm:p-8 print:p-0 flex-1 bg-slate-50/50 print:bg-white print:overflow-visible">
         <div
           ref={printRef}
           id="purchase-invoice-print-content"
-          className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-300 shadow-sm mx-auto text-slate-900 space-y-6 max-w-3xl"
+          className="invoice-print-area bg-white p-6 sm:p-8 print:p-2 rounded-2xl border border-slate-300 print:border-none shadow-sm print:shadow-none mx-auto text-slate-900 space-y-6 print:space-y-3 max-w-3xl print:max-w-none"
         >
           {/* Header */}
-          <div className="border-b-2 border-emerald-900/30 pb-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="border-b-2 border-emerald-900/30 pb-4 print:pb-2.5 flex flex-col sm:flex-row items-center justify-between gap-4 print:gap-2 print-avoid-break">
             <div className="flex items-center gap-3">
               {settings.lodgeLogo ? (
                 <img
                   src={settings.lodgeLogo}
                   alt={settings.lodgeName}
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = '/lodge-logo.svg';
+                  }}
                   className="w-16 h-16 object-contain rounded-xl border border-slate-200 p-1"
                 />
               ) : (
@@ -330,7 +349,7 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
           </div>
 
           {/* Vendor Details */}
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className="bg-slate-50 rounded-2xl p-4 print:p-2 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 print:gap-1.5 text-xs print-avoid-break">
             <div>
               <span className="text-[11px] text-slate-500 font-semibold block">فروشنده / تامین‌کننده:</span>
               <p className="text-sm font-bold text-slate-900 mt-0.5">{invoice.vendorName}</p>
@@ -348,27 +367,27 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
             <table className="w-full text-right text-xs">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 px-3 text-center w-12">#</th>
-                  <th className="py-2.5 px-4">شرح کالا یا خدمات خریداری شده</th>
-                  <th className="py-2.5 px-3">دسته‌بندی</th>
-                  <th className="py-2.5 px-3 text-center">تعداد / مقدار</th>
-                  <th className="py-2.5 px-3 text-center">واحد</th>
-                  <th className="py-2.5 px-3">قیمت واحد (تومان)</th>
-                  <th className="py-2.5 px-4 text-left">قیمت کل (تومان)</th>
+                  <th className="py-2.5 px-3 print:py-1.5 print:px-2 text-center w-12">#</th>
+                  <th className="py-2.5 px-4 print:py-1.5 print:px-2">شرح کالا یا خدمات خریداری شده</th>
+                  <th className="py-2.5 px-3 print:py-1.5 print:px-2">دسته‌بندی</th>
+                  <th className="py-2.5 px-3 print:py-1.5 print:px-2 text-center">تعداد / مقدار</th>
+                  <th className="py-2.5 px-3 print:py-1.5 print:px-2 text-center">واحد</th>
+                  <th className="py-2.5 px-3 print:py-1.5 print:px-2">قیمت واحد (تومان)</th>
+                  <th className="py-2.5 px-4 print:py-1.5 print:px-2 text-left">قیمت کل (تومان)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(invoice.items || []).map((item, idx) => (
                   <tr key={item.id || idx} className="hover:bg-slate-50/50">
-                    <td className="py-2.5 px-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
-                    <td className="py-2.5 px-4 font-bold text-slate-900">{item.itemName}</td>
-                    <td className="py-2.5 px-3 text-slate-500 font-medium">{item.categoryName || '-'}</td>
-                    <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800">{item.quantity}</td>
-                    <td className="py-2.5 px-3 text-center text-slate-600">{item.unit || 'عدد'}</td>
-                    <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
+                    <td className="py-2.5 px-3 print:py-1 print:px-2 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
+                    <td className="py-2.5 px-4 print:py-1 print:px-2 font-bold text-slate-900">{item.itemName}</td>
+                    <td className="py-2.5 px-3 print:py-1 print:px-2 text-slate-500 font-medium">{item.categoryName || '-'}</td>
+                    <td className="py-2.5 px-3 print:py-1 print:px-2 text-center font-mono font-bold text-slate-800">{item.quantity}</td>
+                    <td className="py-2.5 px-3 print:py-1 print:px-2 text-center text-slate-600">{item.unit || 'عدد'}</td>
+                    <td className="py-2.5 px-3 print:py-1 print:px-2 font-mono font-bold text-slate-700">
                       {formatPersianPrice(item.unitPrice)}
                     </td>
-                    <td className="py-2.5 px-4 text-left font-mono font-black text-slate-900">
+                    <td className="py-2.5 px-4 print:py-1 print:px-2 text-left font-mono font-black text-slate-900">
                       {formatPersianPrice(item.totalPrice)}
                     </td>
                   </tr>
@@ -378,7 +397,7 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
           </div>
 
           {/* Financial Calculation Box */}
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex flex-col gap-2 text-xs">
+          <div className="bg-slate-50 rounded-2xl p-4 print:p-2 border border-slate-200 flex flex-col gap-2 print:gap-1 text-xs print-avoid-break">
             <div className="flex items-center justify-between">
               <span className="text-slate-600 font-bold">جمع کل اقلام خرید:</span>
               <span className="font-mono font-bold text-slate-800 text-sm">
@@ -455,7 +474,7 @@ export const PurchaseInvoicePrintModal: React.FC<PurchaseInvoicePrintModalProps>
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div className="invoice-modal-overlay fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:p-0 print:m-0 print:bg-white print:overflow-visible">
       {content}
     </div>
   );
